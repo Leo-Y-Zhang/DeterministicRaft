@@ -17,6 +17,6 @@ Initial release.
 - Hand-rolled SVG timeline renderer (terms, elections, commits,
   partitions per node over virtual time).
 - CLI: harmonia run / check / replay - every run reproducible from its
-  seed; committed example timelines under assets/.
+  seed; run --timeline emits a dependency-free SVG timeline.
 - 151 pytest tests plus a marked long sweep; mypy clean; stdlib-only
   runtime.
