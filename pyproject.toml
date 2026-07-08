@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "raftlab"
+name = "harmonia"
 version = "0.1.0"
 description = "Educational Raft consensus implementation verified by deterministic simulation testing"
 readme = "README.md"
@@ -20,13 +20,13 @@ classifiers = [
 ]
 
 [project.scripts]
-raftlab = "raftlab.cli:main"
+harmonia = "harmonia.cli:main"
 
 [project.optional-dependencies]
 dev = ["pytest", "mypy"]
 
 [tool.setuptools]
-packages = ["raftlab"]
+packages = ["harmonia"]
 
 [tool.pytest.ini_options]
 addopts = "-m 'not slow'"

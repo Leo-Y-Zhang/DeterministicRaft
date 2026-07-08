@@ -5,12 +5,12 @@ import sys
 
 import pytest
 
-from raftlab import __version__
-from raftlab.cli import EXIT_OK, EXIT_USAGE, EXIT_VIOLATION, main
+from harmonia import __version__
+from harmonia.cli import EXIT_OK, EXIT_USAGE, EXIT_VIOLATION, main
 
 
 def run_cli(*argv):
-    proc = subprocess.run([sys.executable, "-m", "raftlab", *argv],
+    proc = subprocess.run([sys.executable, "-m", "harmonia", *argv],
                           capture_output=True, text=True, timeout=300)
     return proc.returncode, proc.stdout, proc.stderr
 
@@ -95,7 +95,7 @@ class TestUsageErrors:
 
 
 class TestSubprocess:
-    """Real end-to-end: python -m raftlab in a child process."""
+    """Real end-to-end: python -m harmonia in a child process."""
 
     def test_run_subprocess(self):
         code, out, err = run_cli("run", "--nodes", "3", "--seed", "1",

@@ -1,6 +1,6 @@
 """Determinism: the same seed must reproduce the exact same run, byte for byte."""
 
-from raftlab.cluster import Cluster
+from harmonia.cluster import Cluster
 
 
 def run(seed=99, faults="chaos", steps=3000, nodes=5):

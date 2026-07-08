@@ -67,7 +67,7 @@ class Cluster:
         }
         self.checker = InvariantChecker(
             seed,
-            replay_hint=(f"raftlab replay --nodes {num_nodes} --seed {seed} "
+            replay_hint=(f"harmonia replay --nodes {num_nodes} --seed {seed} "
                          f"--faults {faults}"),
         )
         self.stats: dict[str, int] = {

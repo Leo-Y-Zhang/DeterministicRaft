@@ -44,7 +44,7 @@ class InvariantViolation(AssertionError):
 class InvariantChecker:
     def __init__(self, seed: int, replay_hint: str = "") -> None:
         self.seed = seed
-        self.replay_hint = replay_hint or f"raftlab replay --seed {seed}"
+        self.replay_hint = replay_hint or f"harmonia replay --seed {seed}"
         self.checks_run = 0
         # Election Safety: term -> the single node id ever seen as leader for it.
         self.leaders_by_term: dict[int, int] = {}

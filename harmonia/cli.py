@@ -1,9 +1,9 @@
-"""RaftLab command-line interface.
+"""Harmonia command-line interface.
 
 Commands:
-  raftlab run    --nodes 5 --seed 42 --faults chaos --steps 20000 [--timeline out.svg]
-  raftlab check  --seeds 300 --faults chaos [--nodes 5 --steps 5000]
-  raftlab replay --seed N [--nodes 5 --faults chaos --steps 20000]
+  harmonia run    --nodes 5 --seed 42 --faults chaos --steps 20000 [--timeline out.svg]
+  harmonia check  --seeds 300 --faults chaos [--nodes 5 --steps 5000]
+  harmonia replay --seed N [--nodes 5 --faults chaos --steps 20000]
 
 Exit codes:
   0  success (run clean / all invariants held / replay identical)
@@ -51,7 +51,7 @@ def _print_result(result: RunResult) -> None:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    print(f"raftlab run: nodes={args.nodes} seed={args.seed} "
+    print(f"harmonia run: nodes={args.nodes} seed={args.seed} "
           f"faults={args.faults} steps={args.steps}")
     try:
         result = _execute(args.nodes, args.seed, args.faults, args.steps)
@@ -61,7 +61,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     _print_result(result)
     if args.timeline:
         svg = render_timeline(result.events, result.num_nodes, result.virtual_time,
-                              title=(f"RaftLab seed={result.seed} faults={result.faults} "
+                              title=(f"Harmonia seed={result.seed} faults={result.faults} "
                                      f"nodes={result.num_nodes} steps={result.steps}"))
         with open(args.timeline, "w", encoding="utf-8", newline="\n") as f:
             f.write(svg)
@@ -70,7 +70,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def cmd_check(args: argparse.Namespace) -> int:
-    print(f"raftlab check: seeds 0..{args.seeds - 1} nodes={args.nodes} "
+    print(f"harmonia check: seeds 0..{args.seeds - 1} nodes={args.nodes} "
           f"faults={args.faults} steps={args.steps}")
     violations: list[InvariantViolation] = []
     checks = 0
@@ -92,7 +92,7 @@ def cmd_check(args: argparse.Namespace) -> int:
 
 def cmd_replay(args: argparse.Namespace) -> int:
     """Run the same configuration twice and prove the traces are byte-identical."""
-    print(f"raftlab replay: nodes={args.nodes} seed={args.seed} "
+    print(f"harmonia replay: nodes={args.nodes} seed={args.seed} "
           f"faults={args.faults} steps={args.steps}")
     outcomes = []
     for attempt in (1, 2):
@@ -105,7 +105,7 @@ def cmd_replay(args: argparse.Namespace) -> int:
     identical = a.trace == b.trace
     print(f"attempt 1 digest: sha256:{a.digest}")
     print(f"attempt 2 digest: sha256:{b.digest}")
-    if not identical:  # would indicate a determinism bug in RaftLab itself
+    if not identical:  # would indicate a determinism bug in Harmonia itself
         print("replay FAILED: traces differ")
         return EXIT_VIOLATION
     print(f"replay verified: {len(a.trace)} trace events, byte-identical")
@@ -115,11 +115,11 @@ def cmd_replay(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="raftlab",
+        prog="harmonia",
         description="Educational Raft verified by deterministic simulation testing.",
         epilog="exit codes: 0 ok, 1 invariant violation, 2 usage error",
     )
-    parser.add_argument("--version", action="version", version=f"raftlab {__version__}")
+    parser.add_argument("--version", action="version", version=f"harmonia {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
     def common(p: argparse.ArgumentParser, steps_default: int) -> None:

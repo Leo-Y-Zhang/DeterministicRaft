@@ -8,7 +8,7 @@ raises with its seed for exact replay.
 
 import pytest
 
-from raftlab.cluster import Cluster
+from harmonia.cluster import Cluster
 
 SWEEP_STEPS = 4000
 

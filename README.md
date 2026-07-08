@@ -1,4 +1,7 @@
-# RaftLab
+# Harmonia
+
+*Harmonia — the goddess of concord and agreement; this one drives five
+quarrelling nodes to agreement and proves they got there safely.*
 
 **The Raft consensus algorithm, verified by deterministic simulation
 testing.** An educational, paper-faithful implementation of Raft (Ongaro &
@@ -9,13 +12,13 @@ from its seed, and the paper's five safety properties are machine-checked
 after **every single simulator step**.
 
 ```
-$ raftlab check --seeds 300 --faults chaos
+$ harmonia check --seeds 300 --faults chaos
 seeds=300 faults=chaos invariant_checks=1500000 violations=0
 ```
 
 1.5 million invariant evaluations across 300 adversarial network schedules;
 zero violations. When an invariant *does* fail during development, the run
-prints its seed and step — `raftlab replay --seed N` reproduces the failure
+prints its seed and step — `harmonia replay --seed N` reproduces the failure
 exactly, every time. This is the testing approach pioneered for real systems
 by FoundationDB and TigerBeetle (no affiliation — the technique is the
 inspiration).
@@ -24,14 +27,14 @@ inspiration).
 
 Distributed consensus bugs are notoriously unreproducible: they hide in
 message interleavings that unit tests never explore. Deterministic
-simulation inverts the problem — the network *is* the test harness. RaftLab
+simulation inverts the problem — the network *is* the test harness. Harmonia
 is a compact, readable demonstration of that idea applied to the most
 teachable consensus algorithm.
 
 ## What a run looks like
 
 ```
-$ raftlab run --nodes 5 --seed 42 --faults chaos --steps 20000
+$ harmonia run --nodes 5 --seed 42 --faults chaos --steps 20000
 ...
   n0 up   role=candidate term=212 commit=111  applied=111  len=111  log sha256:fb2319200137
   n1 down role=follower  term=211 commit=111  applied=111  len=111  log sha256:fb2319200137
@@ -76,11 +79,11 @@ python -m venv .venv
 # .venv/bin/python -m pip install -e ".[dev]"          # Linux/macOS
 
 python -m pytest -q          # 151 tests (a longer sweep is marked slow)
-python -m mypy raftlab       # clean
+python -m mypy harmonia       # clean
 
-raftlab run --nodes 5 --seed 42 --faults chaos --steps 20000 --timeline out.svg
-raftlab check --seeds 300 --faults chaos
-raftlab replay --seed 42     # identical to run: byte-for-byte event trace
+harmonia run --nodes 5 --seed 42 --faults chaos --steps 20000 --timeline out.svg
+harmonia check --seeds 300 --faults chaos
+harmonia replay --seed 42     # identical to run: byte-for-byte event trace
 ```
 
 Exit codes: `0` success / no violations, `1` invariant violation (with seed
@@ -89,7 +92,7 @@ and step), `2` usage errors.
 ## Architecture
 
 ```
-raftlab/
+harmonia/
   sim.py         discrete-event core: virtual clock, event queue, seeded RNG,
                  network faults (drop/duplicate/delay/reorder/partition)
   node.py        the Raft state machine: follower/candidate/leader,

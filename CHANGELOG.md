@@ -16,7 +16,7 @@ Initial release.
 - Bounded liveness check under none/light fault profiles.
 - Hand-rolled SVG timeline renderer (terms, elections, commits,
   partitions per node over virtual time).
-- CLI: raftlab run / check / replay - every run reproducible from its
+- CLI: harmonia run / check / replay - every run reproducible from its
   seed; committed example timelines under assets/.
 - 151 pytest tests plus a marked long sweep; mypy clean; stdlib-only
   runtime.

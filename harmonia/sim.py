@@ -1,6 +1,6 @@
 """Discrete-event simulator: virtual clock, priority event queue, seeded RNG, faulty network.
 
-Everything that happens in a RaftLab run flows through this module. The simulator owns
+Everything that happens in a Harmonia run flows through this module. The simulator owns
 a single seeded random.Random instance; every source of nondeterminism (message delays,
 drops, duplicates, election timeouts, fault injection) draws from that one stream in a
 deterministic order, so the same seed always reproduces the exact same run.

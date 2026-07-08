@@ -4,8 +4,8 @@ Raft only guarantees liveness during stable-enough periods (section 5.6 / FLP),
 so these checks are bounded: some command must commit within a step budget.
 """
 
-from raftlab.cluster import Cluster
-from raftlab.node import LEADER
+from harmonia.cluster import Cluster
+from harmonia.node import LEADER
 
 BUDGET = 12_000  # steps; generous but bounded
 

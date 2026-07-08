@@ -1,7 +1,7 @@
 """Log replication tests: commits, repair after divergence, nextIndex backoff."""
 
-from raftlab.cluster import Cluster
-from raftlab.node import FOLLOWER, LEADER
+from harmonia.cluster import Cluster
+from harmonia.node import FOLLOWER, LEADER
 
 
 def has_leader(c):
@@ -143,7 +143,7 @@ class TestDivergenceAndRepair:
 
     def test_logs_converge_after_chaos(self):
         """After a chaos run, stop the faults, heal everything, verify convergence."""
-        from raftlab.sim import PROFILES
+        from harmonia.sim import PROFILES
         c = Cluster(num_nodes=5, seed=32, faults="chaos")
         c.run(8000)
         c.profile = PROFILES["none"]      # fault driver goes quiet
