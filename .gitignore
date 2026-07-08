@@ -23,3 +23,9 @@ Thumbs.db
 # Scratch output (committed timelines live in docs/)
 *.svg
 !docs/*.svg
+
+# Secrets / credentials (defensive - none should ever exist here)
+.env
+.env.*
+*.pem
+*.key
