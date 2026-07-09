@@ -20,6 +20,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from .kv import Command, KVStateMachine
+
 if TYPE_CHECKING:
     from .sim import Simulator
 
@@ -92,12 +94,14 @@ class RaftNode:
         send: Callable[[int, int, Message], None],
         record: Callable[[str, str], None],
         config: RaftConfig = DEFAULT_CONFIG,
+        on_apply: Callable[[str, str], None] | None = None,
     ) -> None:
         self.id = node_id
         self.peers = sorted(peer_ids)
         self.sim = sim
         self._send = send
         self._record = record
+        self._on_apply = on_apply     # (command_str, result) reported as each entry applies
         self.config = config
         self.cluster_size = len(self.peers) + 1
 
@@ -111,7 +115,8 @@ class RaftNode:
         self.role: str = FOLLOWER
         self.commit_index: int = 0
         self.last_applied: int = 0
-        self.applied: list[str] = []          # the "state machine": applied commands
+        self.applied: list[str] = []          # applied command labels (feeds the checker)
+        self.kv = KVStateMachine()            # the replicated state machine (see kv.py)
         self.leader_id: int | None = None
         self.alive: bool = True
         self.log_version: int = 0             # bumped on any log mutation (for checker)
@@ -381,5 +386,9 @@ class RaftNode:
         self._record("commit", f"n{self.id}|index={index}")
         while self.last_applied < self.commit_index:
             self.last_applied += 1
-            self.applied.append(self.entry_at(self.last_applied).command)
-            self._record("apply", f"n{self.id}|index={self.last_applied}|{self.applied[-1]}")
+            command = self.entry_at(self.last_applied).command
+            self.applied.append(command)
+            result = self.kv.apply(Command.decode(command))
+            self._record("apply", f"n{self.id}|index={self.last_applied}|{command}")
+            if self._on_apply is not None:
+                self._on_apply(command, result)

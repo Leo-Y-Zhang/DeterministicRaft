@@ -16,11 +16,33 @@ from dataclasses import dataclass
 from typing import Any
 
 from .invariants import InvariantChecker
+from .kv import CAS, GET, PUT, Command, HistoryEntry
 from .node import DEFAULT_CONFIG, LEADER, Message, RaftConfig, RaftNode
 from .sim import PROFILES, FaultProfile, Network, Simulator
 
 CLIENT_INTERVAL = 100  # ms between client command attempts
 FAULT_INTERVAL = 100   # ms between fault-driver decisions
+
+# Deterministic client workload: a few clients hammering a small keyspace so operations
+# contend on the same keys (which is what makes linearizability interesting to check).
+# Purely counter-driven -> draws NO randomness, so recording it leaves the rng stream
+# length unchanged; only the command text (and therefore the trace digest) moves.
+WORKLOAD_CLIENTS = 3
+WORKLOAD_KEYS = ("k0", "k1", "k2")
+WORKLOAD_OPS = (PUT, PUT, GET, CAS)
+
+
+def workload_command(seq: int) -> Command:
+    """The seq-th client command. A pure function of ``seq`` (no randomness)."""
+    client_id = seq % WORKLOAD_CLIENTS
+    req_id = seq // WORKLOAD_CLIENTS
+    key = WORKLOAD_KEYS[seq % len(WORKLOAD_KEYS)]
+    op = WORKLOAD_OPS[seq % len(WORKLOAD_OPS)]
+    if op == GET:
+        return Command(client_id, req_id, GET, key)
+    if op == CAS:
+        return Command(client_id, req_id, CAS, key, f"v{seq}", f"v{seq - 1}" if seq else "")
+    return Command(client_id, req_id, PUT, key, f"v{seq}")
 
 
 @dataclass
@@ -48,6 +70,7 @@ class Cluster:
         faults: str = "none",
         config: RaftConfig = DEFAULT_CONFIG,
         client_interval: int | None = CLIENT_INTERVAL,
+        record_history: bool = True,
     ) -> None:
         if num_nodes < 1:
             raise ValueError("need at least one node")
@@ -59,11 +82,17 @@ class Cluster:
         self.sim = Simulator(seed)
         self.trace: list[str] = []
         self.events: list[tuple[int, str, str]] = []
+        # Client-observed operation history (invoke/return + result), for the
+        # linearizability oracle. Purely passive: recording it draws no randomness and
+        # emits nothing to the trace, so it never perturbs a run's digest.
+        self._record_history = record_history
+        self.history: list[HistoryEntry] = []
+        self._pending: dict[str, HistoryEntry] = {}   # encoded command -> its history row
         ids = list(range(num_nodes))
         self.net = Network(self.sim, ids, self.profile, self._deliver, self.record)
         self.nodes: dict[int, RaftNode] = {
             i: RaftNode(i, [p for p in ids if p != i], self.sim,
-                        self.net.send, self.record, config)
+                        self.net.send, self.record, config, on_apply=self._on_apply)
             for i in ids
         }
         self.checker = InvariantChecker(
@@ -104,16 +133,47 @@ class Cluster:
     def _client_tick(self) -> None:
         """A client submits a command to a randomly chosen node; only a node that
         currently believes it is leader accepts. Occasionally that is a stale
-        leader, which is exactly the kind of divergence Raft must repair."""
+        leader, which is exactly the kind of divergence Raft must repair.
+
+        The single rng draw (which node to try) is unchanged from before; the command
+        itself is derived deterministically from a counter, so no draw is inserted."""
         target = self.sim.rng.choice(sorted(self.nodes))
         node = self.nodes[target]
         if node.alive and node.role == LEADER:
-            cmd = f"cmd-{self._next_command}"
+            command = workload_command(self._next_command)
             self._next_command += 1
             self.stats["commands_submitted"] += 1
-            self.record("client", f"n{target}|{cmd}")
-            node.client_command(cmd)
+            encoded = command.encode()
+            self.record("client", f"n{target}|{encoded}")
+            self._invoke(command, encoded)
+            node.client_command(encoded)
         self.sim.schedule(self._client_interval, self._client_tick)
+
+    # -- client-observed history (passive: no randomness, no trace output) ------
+
+    def _invoke(self, command: Command, encoded: str) -> None:
+        """Record that a client submitted ``command`` at the current step."""
+        if not self._record_history:
+            return
+        row = HistoryEntry(
+            client_id=command.client_id, req_id=command.req_id, op=command.op,
+            key=command.key, value=command.value, expected=command.expected,
+            invoke_step=self.sim.steps,
+        )
+        self.history.append(row)
+        self._pending[encoded] = row
+
+    def _on_apply(self, encoded: str, result: str) -> None:
+        """Complete the pending client op when the state machine first applies it.
+
+        Fires once per node per applied entry; the first application (by the leader,
+        which commits first) fixes the client-visible return step and result."""
+        if not self._record_history:
+            return
+        row = self._pending.pop(encoded, None)
+        if row is not None:
+            row.return_step = self.sim.steps
+            row.observed = result
 
     def _fault_tick(self) -> None:
         rng = self.sim.rng
