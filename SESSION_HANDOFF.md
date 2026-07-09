@@ -50,7 +50,15 @@ byte-identical replay from a seed — guarded by a golden-digest tripwire from S
       invariant fires). Harness invisible when off (goldens unchanged; NO_BUGS run
       byte-identical). Tests use bounded search (robust to seed shifts). README seeds the
       failure gallery + documents the oracle. 236 -> 247 tests.
-- [ ] Step 5 — CO-CROWN B: schedule shrinker (ddmin) + scriptable-schedule prereq
+- [x] Step 5 — CO-CROWN B: schedule shrinker. (5a) Deterministic fault suppression MASK
+      in `_fault_tick` via `_fire_fault`/`suppressed` param + `fault_count` — proven
+      digest-neutral for an empty mask (goldens unchanged). (5b) New `harmonia/shrink.py`:
+      generic Zeller `ddmin` (1-minimal, tested in isolation on synthetic predicates ->
+      500 to exactly {137,402}); `shrink(Scenario)` ddmins the fault ordinals then binary-
+      searches the step budget to a minimal reproduction of the SAME failure signature
+      (invariant name / "nonlinearizable"), each candidate a FRESH masked Cluster.
+      Deterministic, idempotent-stable. Shrinks real bug repros + the stale-read oracle
+      failure. 247 -> 262 tests. **PORTFOLIO-COMPLETE reached** (both co-crowns done).
 - [ ] Step 6 — Real persistence + crash-restart (true volatile-state loss)
 - [ ] Step 7 — Log base-offset abstraction (digest-neutral; snapshot prereq)
 - [ ] Step 8 — Snapshots + InstallSnapshot + generalized checker (same commit)
@@ -61,7 +69,24 @@ byte-identical replay from a seed — guarded by a golden-digest tripwire from S
 bonuses — safe to merge after any completed step if time runs out.
 
 ## Exact next step
-Step 5 — CO-CROWN B: automatic schedule shrinker (ddmin to a minimal counterexample).
+Step 6 — Real persistence + crash-restart with true volatile-state loss (Figure 2 stable
+storage). Today a "crash" merely pauses a node with all state intact (== synchronous
+persistence). Make it real: add an in-memory `StableStore` modelling fsync of the
+PERSISTENT triple (currentTerm, votedFor, log); on crash CLEAR volatile state
+(commit_index, last_applied, applied, kv, role/leader_id, next/match_index, votes,
+_client_index) and on restart REBUILD from the persisted log — re-applying up to
+commit_index (which is itself volatile in Raft, so re-derive/re-apply deterministically),
+and reconstruct the KV session/dedup table from the replayed log so exactly-once survives
+a crash. Surfaces bugs the current model hides (double-apply on replay; a node that voted
+in term T then crashes must NOT vote for a different candidate in T after restart). Crash/
+restart timing draws APPENDED (intentional golden rebaseline for crash-enabled configs).
+Tests: re-derive applied[] identically after crash (no double apply), no double-vote after
+restart, Election Safety across a crash sweep, chaos+real-crash keeps all 5 invariants AND
+linearizability, replay byte-identical. Guardrail: persistence writes are deterministic;
+keep the linearizability oracle + StateMachineSafety green (they regression-guard the
+double-apply risk). NOTE: Steps 6-9 are independently-shippable bonuses; safe to merge to
+main + tag after any completed step. Step 10 = showcase HTML report + README overhaul +
+adversarial 3-lens review + merge --no-ff + tag v1.0.0.
 Two ordered sub-parts. (5a) Lift the fault-driver decisions into an explicit, replayable
 `Schedule` object: a deterministic suppression MASK threaded through `_fault_tick` (each
 fault decision gets an index; a mask can suppress specific ones) — still rng-fed by
