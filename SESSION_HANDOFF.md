@@ -41,7 +41,15 @@ byte-identical replay from a seed — guarded by a golden-digest tripwire from S
       pass / stuck frontier on fail. TDD in isolation on 18 hand-built histories first,
       then validated on real none/light/chaos runs (0 false positives, <3ms). PURE ->
       goldens unchanged. 212 -> 236 tests.
-- [ ] Step 4 — Bug-injection harness + README failure gallery
+- [x] Step 4 — Bug-injection harness + README gallery. New `harmonia/bugs.py` (`Bugs`
+      frozen dataclass, all flags OFF by default, `NO_BUGS`). 5 toggleable bugs threaded
+      through RaftNode/Cluster: drop_commit_term_guard (Fig 8 -> LeaderCompleteness @3-node
+      seed 63), vote_for_stale_candidate (-> LeaderCompleteness @seed 0), skip_log_consistency
+      (-> LogMatching @seed 6), allow_commit_regression (-> CommitIndexMonotonic @seed 1),
+      stale_local_reads (-> ORACLE-ONLY, non-linearizable @3-node seed 14, no internal
+      invariant fires). Harness invisible when off (goldens unchanged; NO_BUGS run
+      byte-identical). Tests use bounded search (robust to seed shifts). README seeds the
+      failure gallery + documents the oracle. 236 -> 247 tests.
 - [ ] Step 5 — CO-CROWN B: schedule shrinker (ddmin) + scriptable-schedule prereq
 - [ ] Step 6 — Real persistence + crash-restart (true volatile-state loss)
 - [ ] Step 7 — Log base-offset abstraction (digest-neutral; snapshot prereq)
@@ -53,7 +61,24 @@ byte-identical replay from a seed — guarded by a golden-digest tripwire from S
 bonuses — safe to merge after any completed step if time runs out.
 
 ## Exact next step
-Step 4 — Bug-injection harness ("nemesis for the algorithm") + README failure gallery.
+Step 5 — CO-CROWN B: automatic schedule shrinker (ddmin to a minimal counterexample).
+Two ordered sub-parts. (5a) Lift the fault-driver decisions into an explicit, replayable
+`Schedule` object: a deterministic suppression MASK threaded through `_fault_tick` (each
+fault decision gets an index; a mask can suppress specific ones) — still rng-fed by
+default, and PROVEN digest-identical when the mask suppresses nothing (a determinism-
+neutral refactor; goldens unchanged). (5b) ddmin over that schedule: given a failing
+`(nodes, seed, faults, steps)` + a predicate (invariant fires OR oracle rejects), binary-
+search the earliest failing step, then reduce the fault-mask to the minimal set that still
+reproduces the SAME violation, each candidate replayed on a FRESH seeded Cluster (never
+mutating the live stream). Emit a replayable scenario + an SVG of just those events. Use
+the Step-4 bug repros as real failures to minimize (Bugs repros: vote@5/seed0,
+skiplog@5/seed6, commitreg@5/seed1, fig8@3/seed63, staleread@3/seed14). Tests:
+ddmin-finds-planted-faults (a synthetic predicate failing iff >=2 specific faults present
+-> ddmin reduces a noisy schedule to exactly those 2), shrunk still reproduces SAME
+violation, local-minimality, idempotence, monotone+terminates, masked-run digest stable,
+healthy run -> empty counterexample, byte-identical minimal schedule per seed. Guardrails:
+mask suppression is a deterministic replayable mask (never a re-roll); assert masked-run
+digest stability; land 5a as its own proven-neutral commit before ddmin.
 Add a registry of TOGGLEABLE algorithm bugs, ALL OFF BY DEFAULT behind explicit config
 flags (e.g. a `Bugs` dataclass threaded into RaftNode/Cluster). Each, when enabled, must
 violate the specific invariant OR the linearizability oracle it targets within a bounded

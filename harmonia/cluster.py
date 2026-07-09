@@ -15,6 +15,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from .bugs import NO_BUGS, Bugs
 from .invariants import InvariantChecker
 from .kv import CAS, GET, PUT, Command, HistoryEntry
 from .node import DEFAULT_CONFIG, LEADER, Message, RaftConfig, RaftNode
@@ -71,6 +72,7 @@ class Cluster:
         config: RaftConfig = DEFAULT_CONFIG,
         client_interval: int | None = CLIENT_INTERVAL,
         record_history: bool = True,
+        bugs: Bugs = NO_BUGS,
     ) -> None:
         if num_nodes < 1:
             raise ValueError("need at least one node")
@@ -78,6 +80,7 @@ class Cluster:
             raise ValueError(f"unknown fault profile: {faults!r}")
         self.seed = seed
         self.faults = faults
+        self.bugs = bugs
         self.profile: FaultProfile = PROFILES[faults]
         self.sim = Simulator(seed)
         self.trace: list[str] = []
@@ -91,8 +94,8 @@ class Cluster:
         ids = list(range(num_nodes))
         self.net = Network(self.sim, ids, self.profile, self._deliver, self.record)
         self.nodes: dict[int, RaftNode] = {
-            i: RaftNode(i, [p for p in ids if p != i], self.sim,
-                        self.net.send, self.record, config, on_apply=self._on_apply)
+            i: RaftNode(i, [p for p in ids if p != i], self.sim, self.net.send,
+                        self.record, config, on_apply=self._on_apply, bugs=bugs)
             for i in ids
         }
         self.checker = InvariantChecker(
@@ -163,7 +166,15 @@ class Cluster:
             self.record("retry", f"n{target}|c{client_id}|{encoded}")
 
         if node.alive and node.role == LEADER:
-            node.client_command(encoded)
+            cmd = Command.decode(encoded)
+            if self.bugs.stale_local_reads and cmd.op == GET:
+                # BUG: answer the read straight from local state, with no log entry and
+                # no leadership confirmation. A stale/partitioned leader returns old data.
+                result = node.kv.store.get(cmd.key, "")
+                self.record("staleread", f"n{target}|{encoded}|{result}")
+                self._on_apply(encoded, result)
+            else:
+                node.client_command(encoded)
         self.sim.schedule(self._client_interval, self._client_tick)
 
     # -- client-observed history + retry bookkeeping ----------------------------
