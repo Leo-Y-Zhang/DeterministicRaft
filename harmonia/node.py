@@ -202,8 +202,10 @@ class RaftNode:
         return self.log[self._phys(index)]
 
     def log_suffix(self, from_index: int) -> tuple[Entry, ...]:
-        """Entries at logical `from_index` and above (for replication)."""
-        return tuple(self.log[self._phys(from_index):])
+        """Entries at logical `from_index` and above (for replication). Callers only ever
+        pass an index above the base; clamp defensively so an at/below-base index returns
+        the whole tail instead of a negative-offset slice."""
+        return tuple(self.log[max(0, self._phys(from_index)):])
 
     # -- lifecycle ------------------------------------------------------------
 

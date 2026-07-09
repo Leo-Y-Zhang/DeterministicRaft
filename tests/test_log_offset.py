@@ -42,3 +42,13 @@ def test_log_suffix_is_a_tuple_from_the_index():
     node = _node([(1, "a"), (1, "b"), (2, "c")])
     assert node.log_suffix(2) == (Entry(1, "b"), Entry(2, "c"))
     assert node.log_suffix(4) == ()
+
+
+def test_log_suffix_clamps_at_or_below_the_base():
+    # a from_index at/below the compaction boundary must return the whole tail, not a
+    # negative-offset slice (defensive: callers only ever pass above-base indices).
+    node = _node([(2, "a"), (2, "b")])
+    node.base_index, node.base_term = 5, 2
+    assert node.log_suffix(5) == (Entry(2, "a"), Entry(2, "b"))   # at base
+    assert node.log_suffix(3) == (Entry(2, "a"), Entry(2, "b"))   # below base
+    assert node.log_suffix(7) == (Entry(2, "b"),)                 # above base
