@@ -33,7 +33,14 @@ byte-identical replay from a seed — guarded by a golden-digest tripwire from S
       client driver: 3 clients, one op outstanding each, round-robin, retry-until-commit.
       Deliberate golden rebaseline (retries lengthen the stream -> digests + rng_calls
       both move, intentional). 199 -> 212 tests; replay byte-identical.
-- [ ] Step 3 — CO-CROWN A: linearizability oracle (pure; TDD in isolation first)
+- [x] Step 3 — CO-CROWN A: linearizability oracle. New `harmonia/linearizability.py`
+      (`check(history)`): Wing-Gong linearize-and-remove, iterative DFS (no recursion
+      limit), minimal-candidate real-time pruning (O(pending) via two-min trick), memoised
+      dead ends, `budget` cap, `max_ops` bound. Pending ops soundly EXCLUDED (committed =>
+      completed in our model, so pending never took effect). Returns a witness order on
+      pass / stuck frontier on fail. TDD in isolation on 18 hand-built histories first,
+      then validated on real none/light/chaos runs (0 false positives, <3ms). PURE ->
+      goldens unchanged. 212 -> 236 tests.
 - [ ] Step 4 — Bug-injection harness + README failure gallery
 - [ ] Step 5 — CO-CROWN B: schedule shrinker (ddmin) + scriptable-schedule prereq
 - [ ] Step 6 — Real persistence + crash-restart (true volatile-state loss)
@@ -46,20 +53,22 @@ byte-identical replay from a seed — guarded by a golden-digest tripwire from S
 bonuses — safe to merge after any completed step if time runs out.
 
 ## Exact next step
-Step 3 — CO-CROWN A: the linearizability oracle (a PURE function of the recorded
-`Cluster.history`). New module `harmonia/linearizability.py`: model each op as an
-invoke/return interval against a reference sequential KV register/map; search for a
-real-time-consistent linearization (Wing-Gong / linearize-and-remove with a memoized
-visited set + bounded concurrency). Catches stale reads, acknowledged-but-lost writes,
-reordered effects that the 5 internal invariants CANNOT express. TDD IN ISOLATION FIRST
-on hand-built histories (known-linearizable accepts; classic non-linearizable rejects
-with a witness; empty/single trivial; pinning-read pass/fail; terminates-in-budget),
-THEN wire to check `Cluster.history` at run end + add to the chaos sweep as an extra
-assertion. Bound the search (cap in-flight ops + history length in sweeps, memoize);
-mark the exhaustive path slow-only. Determinism: pure function -> zero rng, digests
-UNCHANGED (guardrail: assert digest identical with the oracle on vs off). Handle
-in-flight ops (return_step None) by trying both including/excluding them. Positive
-control comes in Step 4 (a deliberately-buggy stale-read mode the oracle must CATCH).
+Step 4 — Bug-injection harness ("nemesis for the algorithm") + README failure gallery.
+Add a registry of TOGGLEABLE algorithm bugs, ALL OFF BY DEFAULT behind explicit config
+flags (e.g. a `Bugs` dataclass threaded into RaftNode/Cluster). Each, when enabled, must
+violate the specific invariant OR the linearizability oracle it targets within a bounded
+seed sweep: (a) drop the 5.4.2 current-term commit guard (Figure 8) -> StateMachineSafety/
+LeaderCompleteness; (b) vote for a less-up-to-date candidate (break 5.4.1) -> Leader
+Completeness / non-linearizable; (c) skip the AppendEntries log-matching consistency check
+-> LogMatching; (d) let commit_index regress -> CommitIndexMonotonic; (e) a stale-leader
+local read bypassing the log -> the linearizability oracle CATCHES it (the positive
+control the oracle was built for). Tests: parametrized per bug -> the exact invariant/
+oracle it trips within a bounded sweep; with ALL bugs OFF the full sweep stays green AND
+the baseline digest equals the pre-feature constant (assert goldens UNCHANGED with the
+harness present-but-off); each bug pins a (seed, step) golden for the shrinker (Step 5) to
+minimize. Guardrail: INJECTABLE BUGS OFF BY DEFAULT (a test asserts default sweep green +
+digest unchanged). This is the positive control that proves the oracle/checker catch real
+consensus bugs; seeds the README before/after gallery.
 
 ## Verify commands
 ```
