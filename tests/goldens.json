@@ -1,0 +1,50 @@
+{
+  "1-0-none-500": {
+    "digest": "8e92d65f9b13956093b48610589b989cb0606ebcf8db592a2ab55dc2f20aaef2",
+    "rng_calls": 169
+  },
+  "3-1-none-2000": {
+    "digest": "d410a7864ecd5070ef9436794cbc8635343a9cdfa369612d895e36cf37f7c942",
+    "rng_calls": 1776
+  },
+  "3-2-light-2000": {
+    "digest": "07229a829c9b9b90e8fa7cbdef0cfcb938ce8b1361a731a336ac4cdd03395d5a",
+    "rng_calls": 3944
+  },
+  "3-7-chaos-3000": {
+    "digest": "dcb0b77be3f6e305b2f8e66a58ab7c6a65c2f72e0b517e43424339c039abaee2",
+    "rng_calls": 5941
+  },
+  "5-0-none-2000": {
+    "digest": "e62cd71bf7f27faf56f1c641b6a49e64819e64d09630f2d0b5bfb3221ba61e66",
+    "rng_calls": 1900
+  },
+  "5-3-light-2500": {
+    "digest": "3efaf4a0234b534093a1176481079f1988a8d51fcf96d39fd9628ea2739ddccf",
+    "rng_calls": 5335
+  },
+  "5-42-chaos-3000": {
+    "digest": "1c2471233d94510d0548dd05d087cb0903c022ed872737c2fecb2a9367472552",
+    "rng_calls": 6527
+  },
+  "5-7-chaos-3000": {
+    "digest": "59adc0ce5ec4cc179b34ff1ab1e199ff4d10cd72cc3c5f22080369c4a62d2c9a",
+    "rng_calls": 6529
+  },
+  "5-99-light-2500": {
+    "digest": "919fd9990f68f2636713ec89c463df40c7dd4457cce83bd1ff8f10625785151e",
+    "rng_calls": 5322
+  },
+  "7-11-chaos-3000": {
+    "digest": "4317e950f290d015b50531835e268dd178da6ae7425b9e806ea300638c6098a0",
+    "rng_calls": 6705
+  },
+  "7-13-chaos-2500": {
+    "digest": "d3c27d25afaaa79ef0532fa5c8d296b392a108559a1c8a07f3b54a95aa9949d6",
+    "rng_calls": 5725
+  },
+  "7-5-none-2000": {
+    "digest": "be532c7fc77a83a097eb744625ee38e602768ba270dca8465748b769829dffca",
+    "rng_calls": 1936
+  }
+}

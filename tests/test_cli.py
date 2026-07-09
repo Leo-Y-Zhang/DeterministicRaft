@@ -48,8 +48,8 @@ class TestRun:
         first = capsys.readouterr().out
         main(["run", "--seed", "5", "--faults", "chaos", "--steps", "2000"])
         second = capsys.readouterr().out
-        digest = [l for l in first.splitlines() if "trace digest" in l]
-        assert digest == [l for l in second.splitlines() if "trace digest" in l]
+        digest = [line for line in first.splitlines() if "trace digest" in line]
+        assert digest == [line for line in second.splitlines() if "trace digest" in line]
 
 
 class TestCheck:
@@ -115,8 +115,8 @@ class TestSubprocess:
         code, replay_out, err = run_cli("replay", "--seed", "11", "--faults", "chaos",
                                         "--steps", "1500")
         assert code == 0, err
-        digest = next(l.split("sha256:")[1] for l in run_out.splitlines()
-                      if "trace digest" in l)
+        digest = next(line.split("sha256:")[1] for line in run_out.splitlines()
+                      if "trace digest" in line)
         assert digest in replay_out
 
     def test_version_flag(self):

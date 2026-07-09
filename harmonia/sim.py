@@ -14,8 +14,9 @@ from __future__ import annotations
 
 import heapq
 import random
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable
+from typing import Any
 
 
 class Simulator:
@@ -96,7 +97,7 @@ class Network:
         self.profile = profile
         self._deliver = deliver
         self._record = record
-        self._group: dict[int, int] = {i: 0 for i in self.node_ids}
+        self._group: dict[int, int] = dict.fromkeys(self.node_ids, 0)
         self.crashed: set[int] = set()
         self.sent = 0
         self.delivered = 0
