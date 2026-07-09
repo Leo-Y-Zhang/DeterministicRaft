@@ -18,7 +18,13 @@ byte-identical replay from a seed — guarded by a golden-digest tripwire from S
       `tests/_goldens.py`/`goldens.json` (regenerate: `.venv/Scripts/python.exe
       tests/_goldens.py`); README SafetyChecker->InvariantChecker. Proven behavior-neutral
       vs pristine code (worktree digest check). 151 -> 179 tests.
-- [ ] Step 1 — KV state machine + structured client-op history (prereq)
+- [x] Step 1 — KV state machine + structured client-op history. New `harmonia/kv.py`
+      (`Command` encode/decode [total: opaque strings -> NOOP], `KVStateMachine`
+      put/get/cas, `HistoryEntry`); node applies decoded commands to `self.kv` and reports
+      `(command, result)` via an `on_apply` hook; cluster records a passive
+      invoke/return/observed `history` via a counter-driven `workload_command` (3 clients,
+      3 keys). ZERO new rng draws (rng_calls unchanged on all 12 goldens; digests
+      rebaselined for the richer command text only). 179 -> 199 tests.
 - [ ] Step 2 — Client sessions + exactly-once dedup
 - [ ] Step 3 — CO-CROWN A: linearizability oracle (pure; TDD in isolation first)
 - [ ] Step 4 — Bug-injection harness + README failure gallery
@@ -33,17 +39,18 @@ byte-identical replay from a seed — guarded by a golden-digest tripwire from S
 bonuses — safe to merge after any completed step if time runs out.
 
 ## Exact next step
-Step 1 — KV state machine + structured client-op history (PREREQUISITE for the oracle,
-sessions, reads). Add a deterministic `KVStateMachine` (put/get/cas) applied on
-`_set_commit_index`; replace opaque `cmd-N` strings with a structured `ClientOp`
-carrying `(client_id, req_id, op, key, value)`; record a passive global client history
-of `(client_id, req_id, op, invoke_step, return_step, observed_value)` off the apply
-path (draws NO randomness — reuse the single existing `client_tick` draw, enrich the
-payload only). This DELIBERATELY changes trace bytes (richer command text) → a one-time
-golden rebaseline in THIS commit via `.venv/Scripts/python.exe tests/_goldens.py`;
-review the diff shows only the intended text move. First prove
-`test_history_recording_is_pure` (digest identical with history on vs off) BEFORE the
-rebaseline. Guardrail: APPEND-NEVER-INSERT — add no hot-path rng draw.
+Step 2 — Client sessions + exactly-once dedup (Ongaro 6.3). Make retries honest before
+the oracle exists: Raft's at-least-once delivery means a retried command applies twice
+without dedup. Add per-`(client_id, seq)` session state + a leader-side dedup/response
+cache in the apply path (a retried command with a seen seq returns the cached result and
+does NOT append a second log entry). Add a deterministic retry driver that resubmits
+pending ops to the current leader (client_id/req_id are deterministic counters; any
+retry-target selection draw is APPENDED after the existing client draw, never inserted).
+Deduped completed ops feed the history. This changes `applied[]` -> deliberate golden
+rebaseline. Tests: duplicate-seq-applies-once (log length + applied count unchanged on
+retry), cached-result-on-retry, dedup-survives-leader-change, chaos property (every
+`(client_id, seq)` applies <= once on every node). Guardrail: APPEND-NEVER-INSERT; keep
+the invariant checker + linearizability-precursor (test_history) green.
 
 ## Verify commands
 ```

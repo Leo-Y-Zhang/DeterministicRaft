@@ -1,50 +1,50 @@
 {
   "1-0-none-500": {
-    "digest": "116e7bfb9f6cc38f4dd823b5846832b2856d527b729090efd928435f7c33c0f3",
+    "digest": "3ee29555bdfc5bbc7bf4305f32063354b0cafc553ca828fedb9b0bcf0a9eb896",
     "rng_calls": 169
   },
   "3-1-none-2000": {
-    "digest": "db90c707532a73765321cff9aeb5210efcfb60eb7cce92629992fed9ebcdb715",
+    "digest": "554f3ba0fa6bf708e818b30d153d0c13c7bbb3cbffa4f597c53e2b581d232477",
     "rng_calls": 1776
   },
   "3-2-light-2000": {
-    "digest": "c3c72a9d44099c71366b94d96b8be3d387945b33ed4fa5e5aea453008e20fbd0",
+    "digest": "3b03a1891d2ca6cee7216f96cc98a41f285c83afc1c3c68a138808f31fc801fa",
     "rng_calls": 3944
   },
   "3-7-chaos-3000": {
-    "digest": "d4a3c323129a25f25335faddba72a39c5ec224676133551b2160c92eba96b94a",
+    "digest": "619e6bfe4e44442108e5e9bb9f5133e0d91f19476df9c37601e5f9d501447f0b",
     "rng_calls": 5999
   },
   "5-0-none-2000": {
-    "digest": "3c7c0834840c19ade55c9927a4db828183f699be16070502d1a4cce4ca2a6e47",
+    "digest": "9d797becde4777c7987c8be044557debdfe9c5d8869f217418be011667cfd580",
     "rng_calls": 1900
   },
   "5-3-light-2500": {
-    "digest": "720c246d8c51ec47fec4b35a2065a81691e445e022c811776a83a0a6de7ec72d",
+    "digest": "d71d0df5e3bfce3792a68216ae63c51ee1a1c5c713d6e451500580fad2f482c3",
     "rng_calls": 5335
   },
   "5-42-chaos-3000": {
-    "digest": "47a9bf61cb71e87b8c3a3502653e31a80ae222cee8e9e5dd0ebd8db1e3351fb8",
+    "digest": "d08ddbf7b3f3541146c356522ef3321fd60525fef66702b771fe525ca6ec8992",
     "rng_calls": 6509
   },
   "5-7-chaos-3000": {
-    "digest": "ea247fbc11dbe6395d839ed5e73756f109ca79fb611165b9b104214d974323fa",
+    "digest": "58ae1d96eb484ccf52384ab272fc64d959901788aa814449c7867ba086ed1e7c",
     "rng_calls": 6483
   },
   "5-99-light-2500": {
-    "digest": "ee17c9a6749c43330e890e2d9bde6b8c763feed56419f39c0f639e3393327158",
+    "digest": "59689a83b8d04bbbe2aaf360cbadf3a9b56730a2acabf3df1d68b1ef96c3e0ce",
     "rng_calls": 5322
   },
   "7-11-chaos-3000": {
-    "digest": "ab681282f838c74dd678e56cff9409ecc21ef76f514109fb1e17ea264568d9bd",
+    "digest": "715830387df349119b23db68987aebc9f717d5992b1266378b6f52646ab375c2",
     "rng_calls": 6725
   },
   "7-13-chaos-2500": {
-    "digest": "b448fa76b81a1257f8df23aebb4e8308819fa88690dcb82c2aa94f305dbd969f",
+    "digest": "13e0816f1c7532e5db59001f5e3c1238d345ea876db700cd81699e4dbc4c88d5",
     "rng_calls": 5725
   },
   "7-5-none-2000": {
-    "digest": "589681c1f47c3645828ac683692d941c779c04398289e83e8e29a13fa7e810d7",
+    "digest": "4c63557efc38f9776dc79fe6c78ea7914d90632ccecba41941fab5899c82fc93",
     "rng_calls": 1936
   }
 }
