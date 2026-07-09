@@ -12,8 +12,8 @@
     "rng_calls": 3944
   },
   "3-7-chaos-3000": {
-    "digest": "15359111cd4d1de6a39f32ae75c815dd0c93504c347158c773e87e3b100952ef",
-    "rng_calls": 5999
+    "digest": "dcb0b77be3f6e305b2f8e66a58ab7c6a65c2f72e0b517e43424339c039abaee2",
+    "rng_calls": 5941
   },
   "5-0-none-2000": {
     "digest": "e62cd71bf7f27faf56f1c641b6a49e64819e64d09630f2d0b5bfb3221ba61e66",
@@ -24,23 +24,23 @@
     "rng_calls": 5335
   },
   "5-42-chaos-3000": {
-    "digest": "fd820feee9afa59f163ef17c9a194384d4746e48b57ddabcce40ac1df9959221",
-    "rng_calls": 6533
+    "digest": "1c2471233d94510d0548dd05d087cb0903c022ed872737c2fecb2a9367472552",
+    "rng_calls": 6527
   },
   "5-7-chaos-3000": {
-    "digest": "c44557c174b435cdb42175aa73f50a27ad96c5bffb136038a499353c829bd846",
-    "rng_calls": 6483
+    "digest": "59adc0ce5ec4cc179b34ff1ab1e199ff4d10cd72cc3c5f22080369c4a62d2c9a",
+    "rng_calls": 6529
   },
   "5-99-light-2500": {
     "digest": "919fd9990f68f2636713ec89c463df40c7dd4457cce83bd1ff8f10625785151e",
     "rng_calls": 5322
   },
   "7-11-chaos-3000": {
-    "digest": "137a7b59c2d7db3faf639aac07d371052c59f18a0c4b4a1ce4402e67f4785b8f",
+    "digest": "4317e950f290d015b50531835e268dd178da6ae7425b9e806ea300638c6098a0",
     "rng_calls": 6705
   },
   "7-13-chaos-2500": {
-    "digest": "09332af6b5bc7385962ab9fdb9d57e41ea941dd234faf851814e37d591c2e61e",
+    "digest": "d3c27d25afaaa79ef0532fa5c8d296b392a108559a1c8a07f3b54a95aa9949d6",
     "rng_calls": 5725
   },
   "7-5-none-2000": {

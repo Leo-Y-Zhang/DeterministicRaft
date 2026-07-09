@@ -103,7 +103,7 @@ is caught by exactly the property it targets:
 
 | Injected bug | Breaks | Caught by |
 |---|---|---|
-| `drop_commit_term_guard` | §5.4.2 Figure 8 (commit prior-term entries directly) | Leader Completeness / State Machine Safety |
+| `drop_commit_term_guard` | §5.4.2 Figure 8 (commits a prior-term entry by replica count) | prior-term commit (mechanism pinned) / State Machine Safety |
 | `vote_for_stale_candidate` | §5.4.1 election restriction | Leader Completeness |
 | `skip_log_consistency` | §5.3 log matching | Log Matching |
 | `allow_commit_regression` | commit-index monotonicity | Commit Index Monotonic |

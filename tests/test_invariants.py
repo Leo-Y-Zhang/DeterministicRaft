@@ -19,6 +19,7 @@ class FakeNode:
         self.commit_index = commit_index
         self.applied = list(applied)
         self.log_version = 0
+        self.incarnation = 0
 
     def set_log(self, log):
         self.log = [Entry(*e) for e in log]

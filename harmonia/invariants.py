@@ -28,6 +28,7 @@ class NodeView(Protocol):
     commit_index: int
     applied: list[str]
     log_version: int
+    incarnation: int
 
 
 class InvariantViolation(AssertionError):
@@ -57,6 +58,7 @@ class InvariantChecker:
         # per-node caches
         self._prev_commit: dict[int, int] = {}
         self._applied_seen: dict[int, int] = {}
+        self._incarnation: dict[int, int] = {}  # last-seen incarnation, for crash rebasing
         # _leader_snapshot: id -> (term, ver, log copy); _completeness_checked: id -> (term, ver, n)
         self._leader_snapshot: dict[int, tuple[int, int, list[Entry]]] = {}
         self._pair_checked: dict[tuple[int, int], tuple[int, int]] = {}
@@ -69,12 +71,29 @@ class InvariantChecker:
         """Run all invariants against the current cluster state."""
         self.checks_run += 1
         ids = sorted(nodes)
+        self._handle_restarts(nodes, ids)
         self._check_election_safety(nodes, ids, step)
         self._check_leader_append_only(nodes, ids, step)
         self._check_log_matching(nodes, ids, step)
         self._observe_commits(nodes, ids, step)
         self._check_leader_completeness(nodes, ids, step)
         self._check_state_machine_safety(nodes, ids, step)
+
+    # -- crash rebasing -------------------------------------------------------
+
+    def _handle_restarts(self, nodes: Mapping[int, NodeView], ids: list[int]) -> None:
+        """A crash-restart legitimately discards volatile state, so commit index and
+        applied progress reset. Those are tracked PER INCARNATION: when a node's
+        incarnation changes, rebase its caches to the fresh state instead of flagging the
+        reset as a regression. Persistent state (log/term) is unaffected, so the log-based
+        invariants (Log Matching, Leader Completeness) keep checking across the crash."""
+        for i in ids:
+            inc = nodes[i].incarnation
+            prev = self._incarnation.get(i)
+            self._incarnation[i] = inc
+            if prev is not None and prev != inc:  # a real restart, not first sight
+                self._prev_commit[i] = nodes[i].commit_index
+                self._applied_seen[i] = len(nodes[i].applied)
 
     # -- Election Safety: at most one leader can be elected in a given term ----
 

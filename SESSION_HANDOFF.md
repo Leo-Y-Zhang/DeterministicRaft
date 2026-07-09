@@ -59,7 +59,17 @@ byte-identical replay from a seed — guarded by a golden-digest tripwire from S
       (invariant name / "nonlinearizable"), each candidate a FRESH masked Cluster.
       Deterministic, idempotent-stable. Shrinks real bug repros + the stale-read oracle
       failure. 247 -> 262 tests. **PORTFOLIO-COMPLETE reached** (both co-crowns done).
-- [ ] Step 6 — Real persistence + crash-restart (true volatile-state loss)
+- [x] Step 6 — Real persistence + crash-restart. A crash (`pause`) now discards ALL
+      volatile state via `_reset_volatile` (role/commit/apply/kv/leader bookkeeping) and
+      bumps `incarnation`; only currentTerm/votedFor/log persist. Restart comes back as a
+      follower; the state machine is rebuilt by re-applying the log (verified: no double
+      apply; sessions survive). InvariantChecker made crash-aware (`_handle_restarts`
+      rebases commit/applied caches per incarnation — monotonicity holds within an
+      incarnation, log-based invariants keep checking across the crash). Bug repros
+      re-found (skip_log now trips SMS@7; fig8 pinned as a DETERMINISTIC mechanism test —
+      commits prior-term by count; stale-read nonlinearizable@0). Chaos goldens rebaselined
+      (crashes reset volatile); none/light unchanged. 262 -> 268 tests; 100-seed sweep 0
+      violations.
 - [ ] Step 7 — Log base-offset abstraction (digest-neutral; snapshot prereq)
 - [ ] Step 8 — Snapshots + InstallSnapshot + generalized checker (same commit)
 - [ ] Step 9 — Capstone: ReadIndex reads (preferred) OR single-server membership
@@ -69,24 +79,24 @@ byte-identical replay from a seed — guarded by a golden-digest tripwire from S
 bonuses — safe to merge after any completed step if time runs out.
 
 ## Exact next step
-Step 6 — Real persistence + crash-restart with true volatile-state loss (Figure 2 stable
-storage). Today a "crash" merely pauses a node with all state intact (== synchronous
-persistence). Make it real: add an in-memory `StableStore` modelling fsync of the
-PERSISTENT triple (currentTerm, votedFor, log); on crash CLEAR volatile state
-(commit_index, last_applied, applied, kv, role/leader_id, next/match_index, votes,
-_client_index) and on restart REBUILD from the persisted log — re-applying up to
-commit_index (which is itself volatile in Raft, so re-derive/re-apply deterministically),
-and reconstruct the KV session/dedup table from the replayed log so exactly-once survives
-a crash. Surfaces bugs the current model hides (double-apply on replay; a node that voted
-in term T then crashes must NOT vote for a different candidate in T after restart). Crash/
-restart timing draws APPENDED (intentional golden rebaseline for crash-enabled configs).
-Tests: re-derive applied[] identically after crash (no double apply), no double-vote after
-restart, Election Safety across a crash sweep, chaos+real-crash keeps all 5 invariants AND
-linearizability, replay byte-identical. Guardrail: persistence writes are deterministic;
-keep the linearizability oracle + StateMachineSafety green (they regression-guard the
-double-apply risk). NOTE: Steps 6-9 are independently-shippable bonuses; safe to merge to
-main + tag after any completed step. Step 10 = showcase HTML report + README overhaul +
-adversarial 3-lens review + merge --no-ff + tag v1.0.0.
+Step 7 — Log base-offset abstraction (determinism-NEUTRAL refactor; HARD prereq for
+snapshots). Replace raw 1-based `log[index-1]` indexing with helpers carrying a
+`base_index` (== 0 today, so behaviour + digests UNCHANGED). In node.py route
+`term_at`/`entry_at`/`last_log_index`/log slicing + `_advance_commit`/`_send_append_entries`
+through helpers that treat the log as `[base_index+1 .. base_index+len(log)]`; in
+invariants.py route the direct `log[idx-1]` reads (`_observe_commits`,
+`_check_leader_completeness`, `_check_log_matching`, `_check_leader_append_only`) through
+the same abstraction, extending the `NodeView` Protocol with the base-offset accessors.
+Ship with base_index==0 so ZERO digests move (that is the exact oracle for this refactor —
+run the golden test; it must be untouched). Tests: all existing pass unchanged;
+golden-digests-unchanged; a property test that `term_at(i)` at base=0 equals the old
+behaviour across random logs; ruff+mypy--strict clean. Guardrail: BASE-OFFSET BEFORE
+SNAPSHOTS — no snapshot code touches raw indexing until this lands proven digest-neutral.
+
+NOTE: Steps 7-9 are independently-shippable; safe to merge to main + tag after any
+completed step. Step 8 (snapshots + InstallSnapshot + generalized checker IN THE SAME
+COMMIT) is the HIGHEST-RISK step. Step 10 = showcase HTML report + README overhaul +
+adversarial 3-lens review + merge --no-ff main + tag v1.0.0.
 Two ordered sub-parts. (5a) Lift the fault-driver decisions into an explicit, replayable
 `Schedule` object: a deterministic suppression MASK threaded through `_fault_tick` (each
 fault decision gets an index; a mask can suppress specific ones) — still rng-fed by
