@@ -76,7 +76,17 @@ byte-identical replay from a seed — guarded by a golden-digest tripwire from S
       digests UNCHANGED (the refactor's correctness oracle). Property test: helpers == raw
       1-based indexing across random logs. 268 -> 271 tests. (Checker still reads raw logs;
       its generalization is Step 8's same-commit job.)
-- [ ] Step 8 — Snapshots + InstallSnapshot + generalized checker (same commit)
+- [x] Step 8 — Snapshots / log compaction + InstallSnapshot + generalized checker (same
+      commit). Behind `RaftConfig.snapshot_threshold` (default 0 = OFF -> default goldens
+      untouched). Compaction folds the applied prefix into a `Snapshot` (kv store + session
+      table + last_index/term), advances base_index, keeps the uncommitted tail;
+      InstallSnapshot re-seeds a follower behind the compaction point; crash-restart
+      restores the kv from the persisted snapshot. InvariantChecker generalized to reason
+      over (compacted prefix + live tail) via logical accessors on NodeView -- planted-bug
+      FakeNode tests prove it still CATCHES cross-boundary divergence and does NOT
+      false-positive on legal compaction. Chaos+snapshot sweep: all 5 invariants +
+      linearizability hold across 100s of compactions/installs; own pinned golden matrix;
+      timeline gets a snapshot diamond. 271 -> 306 tests.
 - [ ] Step 9 — Capstone: ReadIndex reads (preferred) OR single-server membership
 - [ ] Step 10 — Showcase HTML report + README + adversarial review + merge + tag v1.0.0
 
@@ -84,29 +94,25 @@ byte-identical replay from a seed — guarded by a golden-digest tripwire from S
 bonuses — safe to merge after any completed step if time runs out.
 
 ## Exact next step
-Step 8 — Snapshots / log compaction + InstallSnapshot RPC, WITH the generalized checker IN
-THE SAME COMMIT (HIGHEST RISK). Behind a config flag (own golden matrix so default digests
-stay pinned). (a) Compaction: when a node's committed prefix exceeds a threshold, discard
-it into a snapshot = (last_included_index, last_included_term, kv store copy, session
-table copy); advance base_index/base_term; keep the uncommitted tail. (b) InstallSnapshot:
-a leader whose nextIndex[follower] <= base_index sends its snapshot; the follower installs
-it (replaces state machine + log prefix, sets base_index/base_term), then resumes normal
-AppendEntries. (c) Generalize the InvariantChecker IN THE SAME COMMIT: NodeView gains
-base_index/base_term; Log Matching + Leader Completeness must treat the compacted prefix as
-trusted-committed and compare over the reconstructed logical log (a node that compacted a
-prefix another still holds raw must NOT false-positive, but a real cross-boundary divergence
-must still be CAUGHT — add a planted-bug fake-node test). Determinism: snapshot threshold
-from config not RNG; new InstallSnapshot draws APPENDED; own golden matrix. Timeline gets a
-snapshot mark. Tests: term_at/entry_at correct across the boundary; follower below the
-snapshot converges via InstallSnapshot; chaos+snapshot sweep keeps all 5 invariants AND
-linearizability; compaction never drops the uncommitted tail; determinism-with-snapshots
-golden matrix. Guardrails: BASE-OFFSET (Step 7) done; CHECKER GENERALIZED IN LOCKSTEP;
-INJECTABLE-off-by-default style (snapshots behind a flag, default OFF -> existing goldens
-untouched).
+Step 9 — Capstone: ReadIndex linearizable reads (PREFERRED). Today every read (get) goes
+through the log. Add a message-driven ReadIndex path (Raft section 8): a leader answers a
+read at its current commit index only after confirming it still leads via a fresh
+heartbeat round (a majority of AppendEntries acks in the current term) -- NOT a wall-clock
+lease. Behind a config flag (own golden matrix; default digests untouched). The read's
+history op gets a proper linearization point (invoke at request, return when the confirmed
+round completes). Feeds the oracle read events. Tests: a partitioned-away former leader
+that has NOT completed a ReadIndex round REFUSES / does not linearize a read; a read after
+a confirmed round reflects all writes committed before its invoke; bug-inject a naive
+'read local state' mode (reuse Bugs.stale_local_reads framing) and assert the oracle
+CATCHES the stale read; ReadIndex reads are linearizable in the chaos sweep. ALTERNATE
+(bigger, riskier, only if runway): single-server add/remove membership with per-config
+majorities + same-commit checker change. Whichever ships, document the other honestly in
+README Scope & limitations. Guardrails: new confirmation-round draws APPENDED + own golden
+matrix; keep the oracle + invariants green.
 
-NOTE: Steps 8-9 are independently-shippable; safe to merge to main + tag after any. Step 9
-= ReadIndex reads OR single-server membership. Step 10 = showcase HTML report + README
-overhaul + adversarial 3-lens review + merge --no-ff main + tag v1.0.0.
+Step 10 = showcase HTML report (`harmonia report`) + README overhaul (features, gallery,
+scope) + CHANGELOG 1.0.0 + adversarial 3-lens review (Raft-correctness / determinism /
+oracle-correctness) + fix findings + merge --no-ff main + tag v1.0.0.
 Two ordered sub-parts. (5a) Lift the fault-driver decisions into an explicit, replayable
 `Schedule` object: a deterministic suppression MASK threaded through `_fault_tick` (each
 fault decision gets an index; a mask can suppress specific ones) — still rng-fed by

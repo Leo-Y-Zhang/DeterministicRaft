@@ -121,6 +121,26 @@ class KVStateMachine:
         """A copy of the store (deterministic: sorted keys)."""
         return dict(sorted(self.store.items()))
 
+    def capture(self) -> tuple[dict[str, str], dict[int, tuple[int, str]]]:
+        """Deep-ish copy of the full replicated state (store + sessions) for a snapshot."""
+        return dict(sorted(self.store.items())), dict(sorted(self.sessions.items()))
+
+    def restore(self, store: dict[str, str], sessions: dict[int, tuple[int, str]]) -> None:
+        """Replace the state machine wholesale from a snapshot's captured state."""
+        self.store = dict(store)
+        self.sessions = dict(sessions)
+
+
+@dataclass
+class Snapshot:
+    """A compacted state-machine image: everything committed at or below ``last_index``.
+    Persistent (survives a crash) so the discarded log prefix can always be recovered."""
+
+    last_index: int
+    last_term: int
+    store: dict[str, str]
+    sessions: dict[int, tuple[int, str]]
+
 
 @dataclass
 class HistoryEntry:
