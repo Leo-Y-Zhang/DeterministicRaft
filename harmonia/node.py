@@ -84,7 +84,24 @@ class InstallSnapshot:
     sessions: dict[int, tuple[int, str]]
 
 
-Message = RequestVote | VoteReply | AppendEntries | AppendReply | InstallSnapshot
+@dataclass(frozen=True)
+class ReadHeartbeat:
+    """A leadership-confirmation ping for a ReadIndex read (section 8). Kept separate from
+    AppendEntries so ordinary runs are byte-identical when ReadIndex is off."""
+    term: int
+    leader: int
+    read_id: int
+
+
+@dataclass(frozen=True)
+class ReadAck:
+    term: int
+    follower: int
+    read_id: int
+
+
+Message = (RequestVote | VoteReply | AppendEntries | AppendReply | InstallSnapshot
+           | ReadHeartbeat | ReadAck)
 
 
 @dataclass(frozen=True)
@@ -156,6 +173,12 @@ class RaftNode:
         # highest request id per client already present in this node's log; a leader uses
         # it to avoid appending a duplicate of a retried request (rebuilt on election).
         self._client_index: dict[int, int] = {}
+        # in-flight ReadIndex reads: read_id -> (encoded command, read index, acking nodes)
+        self._pending_reads: dict[int, tuple[str, int, set[int]]] = {}
+        self._next_read_id: int = 0
+        # a new leader may not know the true commit index until it commits an entry in its
+        # OWN term (Ongaro 8); until then it must not serve ReadIndex reads (they'd be stale)
+        self._committed_this_term: bool = False
 
         self._timer_seq: int = 0              # invalidates stale timer callbacks
 
@@ -222,6 +245,8 @@ class RaftNode:
         self.match_index = {}
         self._votes = set()
         self._client_index = {}
+        self._pending_reads = {}
+        self._committed_this_term = False
         self._timer_seq += 1        # invalidate any in-flight timer callbacks
         self.incarnation += 1
 
@@ -262,6 +287,7 @@ class RaftNode:
         if self.role != FOLLOWER or changed:
             self.role = FOLLOWER
             self._record("role", f"n{self.id}|follower|term={self.term}")
+        self._pending_reads = {}  # a stepped-down leader cannot confirm its pending reads
         self._arm_election_timer()
 
     def start_election(self) -> None:
@@ -288,6 +314,7 @@ class RaftNode:
         self.next_index = dict.fromkeys(self.peers, last + 1)
         self.match_index = dict.fromkeys(self.peers, 0)
         self.match_index[self.id] = last
+        self._committed_this_term = False
         self._rebuild_client_index()
         self._broadcast_heartbeats()
         self._arm_heartbeat_timer()
@@ -347,6 +374,58 @@ class RaftNode:
             self._on_append_reply(msg)
         elif isinstance(msg, InstallSnapshot):
             self._on_install_snapshot(msg)
+        elif isinstance(msg, ReadHeartbeat):
+            self._on_read_heartbeat(msg)
+        elif isinstance(msg, ReadAck):
+            self._on_read_ack(msg)
+
+    # -- ReadIndex reads (section 8): confirm leadership, then serve locally ---
+
+    def request_read(self, command: str) -> bool:
+        """Begin a linearizable read: record the commit index and broadcast a heartbeat
+        round to confirm we still lead. When a majority acks in this term, the read is
+        served from local state via the apply callback. Returns False if not the leader,
+        or if we have not yet committed an entry in this term (commit index may be stale)."""
+        if self.role != LEADER or not self.alive or not self._committed_this_term:
+            return False
+        read_id = self._next_read_id
+        self._next_read_id += 1
+        self._pending_reads[read_id] = (command, self.commit_index, {self.id})
+        self._record("read", f"n{self.id}|id={read_id}|index={self.commit_index}")
+        for p in self.peers:
+            self._send(self.id, p, ReadHeartbeat(self.term, self.id, read_id))
+        self._try_serve_read(read_id)  # single-node cluster confirms immediately
+        return True
+
+    def _on_read_heartbeat(self, msg: ReadHeartbeat) -> None:
+        if msg.term > self.term:
+            self._become_follower(msg.term)
+        if msg.term >= self.term:
+            self.leader_id = msg.leader
+            self._arm_election_timer()
+        self._send(self.id, msg.leader, ReadAck(self.term, self.id, msg.read_id))
+
+    def _on_read_ack(self, msg: ReadAck) -> None:
+        if msg.term > self.term:
+            self._become_follower(msg.term)
+            return
+        pending = self._pending_reads.get(msg.read_id)
+        if pending is None or msg.term != self.term or self.role != LEADER:
+            return
+        pending[2].add(msg.follower)
+        self._try_serve_read(msg.read_id)
+
+    def _try_serve_read(self, read_id: int) -> None:
+        pending = self._pending_reads.get(read_id)
+        if pending is None:
+            return
+        command, read_index, acks = pending
+        if len(acks) * 2 > self.cluster_size and self.last_applied >= read_index:
+            del self._pending_reads[read_id]
+            result = self.kv.apply_read(Command.decode(command))
+            self._record("readserved", f"n{self.id}|id={read_id}|{command}")
+            if self._on_apply is not None:
+                self._on_apply(command, result)
 
     # -- RequestVote RPC (Figure 2, receiver implementation) -------------------
 
@@ -514,6 +593,7 @@ class RaftNode:
             votes = sum(1 for m in self.match_index.values() if m >= n)
             if votes * 2 > self.cluster_size:
                 self._set_commit_index(n)
+                self._committed_this_term = True  # commit index is now trustworthy
                 break
 
     def _set_commit_index(self, index: int) -> None:

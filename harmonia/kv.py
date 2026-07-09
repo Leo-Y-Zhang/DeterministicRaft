@@ -104,6 +104,13 @@ class KVStateMachine:
         self.sessions[cmd.client_id] = (cmd.req_id, result)
         return result
 
+    def apply_read(self, cmd: Command) -> str:
+        """Serve a read directly against the current store, with no log entry and no dedup
+        (used by ReadIndex reads once leadership is confirmed)."""
+        if cmd.op == GET:
+            return self.store.get(cmd.key, "")
+        return ""
+
     def _execute(self, cmd: Command) -> str:
         if cmd.op == PUT:
             self.store[cmd.key] = cmd.value
