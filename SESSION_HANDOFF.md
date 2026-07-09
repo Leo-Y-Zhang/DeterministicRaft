@@ -95,7 +95,14 @@ byte-identical replay from a seed — guarded by a golden-digest tripwire from S
       was missing; fixed). Reads recorded into the history with proper invoke/return.
       Chaos sweep linearizable; stale_local_reads bug stays the oracle's positive control.
       306 -> 337 tests. Membership documented as out-of-scope (README).
-- [ ] Step 10 — Showcase HTML report + README + adversarial review + merge + tag v1.0.0
+- [x] Step 10 — Ship v1.0.0. `harmonia report` self-contained HTML (report.py, golden-file
+      test); README overhaul (all features + honest scope); CHANGELOG 1.0.0 + version bump
+      0.1.0->1.0.0; adversarial 3-lens review (6 findings, 5 refuted, 1 defensive fix to
+      log_suffix); final gates green (343 tests + slow, ruff, mypy --strict, replay
+      byte-identical, 100-seed sweep 0 violations). Merged --no-ff to main + tagged v1.0.0.
+
+## STATUS: COMPLETE. Harmonia to-the-max v1.0.0 shipped (all 11 steps 0-10). 151 -> 343
+tests. Next repo in the max-upgrades program (#5): Talos (see [[project_repo_max_upgrades]]).
 
 **Portfolio-complete by Step 5.** Steps 6–9 are ordered, independently-shippable
 bonuses — safe to merge after any completed step if time runs out.
