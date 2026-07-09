@@ -74,6 +74,7 @@ class Cluster:
         record_history: bool = True,
         bugs: Bugs = NO_BUGS,
         suppressed: frozenset[int] = frozenset(),
+        read_index: bool = False,
     ) -> None:
         if num_nodes < 1:
             raise ValueError("need at least one node")
@@ -82,6 +83,7 @@ class Cluster:
         self.seed = seed
         self.faults = faults
         self.bugs = bugs
+        self._read_index = read_index  # serve GETs via ReadIndex instead of through the log
         # Each fault injection (partition-form / crash) gets an ordinal; the shrinker can
         # SUPPRESS specific ordinals to test whether a bug still reproduces without them.
         # The rng is drawn identically regardless, so an empty mask is byte-identical.
@@ -179,6 +181,8 @@ class Cluster:
                 result = node.kv.store.get(cmd.key, "")
                 self.record("staleread", f"n{target}|{encoded}|{result}")
                 self._on_apply(encoded, result)
+            elif self._read_index and cmd.op == GET:
+                node.request_read(encoded)  # confirm leadership, then serve (section 8)
             else:
                 node.client_command(encoded)
         self.sim.schedule(self._client_interval, self._client_tick)

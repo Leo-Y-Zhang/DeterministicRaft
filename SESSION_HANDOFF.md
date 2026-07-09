@@ -87,32 +87,34 @@ byte-identical replay from a seed — guarded by a golden-digest tripwire from S
       false-positive on legal compaction. Chaos+snapshot sweep: all 5 invariants +
       linearizability hold across 100s of compactions/installs; own pinned golden matrix;
       timeline gets a snapshot diamond. 271 -> 306 tests.
-- [ ] Step 9 — Capstone: ReadIndex reads (preferred) OR single-server membership
+- [x] Step 9 — Capstone: ReadIndex linearizable reads (section 8). Behind `Cluster(
+      read_index=True)` (own golden matrix; default digests untouched). Dedicated
+      ReadHeartbeat/ReadAck messages (AppendEntries digests unchanged); a leader answers a
+      get from local state only after a majority acks in its term AND it has committed an
+      entry in its OWN term (Ongaro 8 -- the oracle CAUGHT a stale-read bug when this guard
+      was missing; fixed). Reads recorded into the history with proper invoke/return.
+      Chaos sweep linearizable; stale_local_reads bug stays the oracle's positive control.
+      306 -> 337 tests. Membership documented as out-of-scope (README).
 - [ ] Step 10 — Showcase HTML report + README + adversarial review + merge + tag v1.0.0
 
 **Portfolio-complete by Step 5.** Steps 6–9 are ordered, independently-shippable
 bonuses — safe to merge after any completed step if time runs out.
 
 ## Exact next step
-Step 9 — Capstone: ReadIndex linearizable reads (PREFERRED). Today every read (get) goes
-through the log. Add a message-driven ReadIndex path (Raft section 8): a leader answers a
-read at its current commit index only after confirming it still leads via a fresh
-heartbeat round (a majority of AppendEntries acks in the current term) -- NOT a wall-clock
-lease. Behind a config flag (own golden matrix; default digests untouched). The read's
-history op gets a proper linearization point (invoke at request, return when the confirmed
-round completes). Feeds the oracle read events. Tests: a partitioned-away former leader
-that has NOT completed a ReadIndex round REFUSES / does not linearize a read; a read after
-a confirmed round reflects all writes committed before its invoke; bug-inject a naive
-'read local state' mode (reuse Bugs.stale_local_reads framing) and assert the oracle
-CATCHES the stale read; ReadIndex reads are linearizable in the chaos sweep. ALTERNATE
-(bigger, riskier, only if runway): single-server add/remove membership with per-config
-majorities + same-commit checker change. Whichever ships, document the other honestly in
-README Scope & limitations. Guardrails: new confirmation-round draws APPENDED + own golden
-matrix; keep the oracle + invariants green.
-
-Step 10 = showcase HTML report (`harmonia report`) + README overhaul (features, gallery,
-scope) + CHANGELOG 1.0.0 + adversarial 3-lens review (Raft-correctness / determinism /
-oracle-correctness) + fix findings + merge --no-ff main + tag v1.0.0.
+Step 10 — Ship v1.0.0. (a) `harmonia report` command: a single self-contained stdlib HTML
+page (run summary + message/fault stats + the SVG timeline inline + linearizability PASS/
+verdict; on a shrunk failure, the minimal repro). Pure function of RunResult+verdict ->
+golden-file HTML test. (b) README overhaul: document the full feature set (KV state machine,
+sessions/dedup, linearizability oracle, bug gallery, schedule shrinker, crash-restart,
+snapshots+InstallSnapshot, ReadIndex) with the injected-bug -> minimal-repro demo; update
+Scope & limitations (single-server membership OUT; real-disk OUT; Byzantine OUT; state
+precisely what the bounded linearizability search does/does not do); fix the test-count and
+`python -m pytest` line (now ~337). (c) CHANGELOG -> 1.0.0 with the real test count + bump
+pyproject version to 1.0.0. (d) Adversarial 3-lens review via a Workflow (Raft-correctness /
+determinism / oracle+checker-correctness) over the whole branch diff; fix confirmed
+findings. (e) Final gates green (pytest + replay + ruff + mypy --strict + the 100-seed CLI
+sweep). (f) merge --no-ff to main, tag v1.0.0, push, confirm CI green (CI runs on main).
+Guardrail: honest claims (bounded KV-register linearizability, educational, no affiliation).
 Two ordered sub-parts. (5a) Lift the fault-driver decisions into an explicit, replayable
 `Schedule` object: a deterministic suppression MASK threaded through `_fault_tick` (each
 fault decision gets an index; a mask can suppress specific ones) — still rng-fed by
