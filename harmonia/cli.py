@@ -20,6 +20,8 @@ from typing import cast
 from . import __version__
 from .cluster import Cluster, RunResult
 from .invariants import InvariantViolation
+from .linearizability import check
+from .report import render_report
 from .timeline import render_timeline
 
 EXIT_OK = 0
@@ -114,6 +116,27 @@ def cmd_replay(args: argparse.Namespace) -> int:
     return EXIT_OK
 
 
+def cmd_report(args: argparse.Namespace) -> int:
+    """Run once and write a self-contained HTML report (summary + timeline + verdict)."""
+    print(f"harmonia report: nodes={args.nodes} seed={args.seed} "
+          f"faults={args.faults} steps={args.steps}")
+    cluster = Cluster(num_nodes=args.nodes, seed=args.seed, faults=args.faults)
+    try:
+        result = cluster.run(args.steps)
+    except InvariantViolation as violation:
+        print(f"INVARIANT VIOLATION: {violation}")
+        return EXIT_VIOLATION
+    verdict = check(cluster.history)
+    svg = render_timeline(result.events, result.num_nodes, result.virtual_time,
+                          title=(f"Harmonia seed={result.seed} faults={result.faults} "
+                                 f"nodes={result.num_nodes} steps={result.steps}"))
+    with open(args.out, "w", encoding="utf-8", newline="\n") as f:
+        f.write(render_report(result, verdict, svg))
+    print(f"report written: {args.out}  (linearizable={verdict.linearizable}, "
+          f"{verdict.checked_ops} ops checked)")
+    return EXIT_OK
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="harmonia",
@@ -148,6 +171,14 @@ def build_parser() -> argparse.ArgumentParser:
     p_replay.add_argument("--seed", type=int, required=True)
     common(p_replay, 20_000)
     p_replay.set_defaults(fn=cmd_replay)
+
+    p_report = sub.add_parser("report",
+                              help="write a self-contained HTML report of one run")
+    p_report.add_argument("--seed", type=int, default=0)
+    common(p_report, 20_000)
+    p_report.add_argument("--out", metavar="OUT.HTML", default="harmonia-report.html",
+                          help="output path (default harmonia-report.html)")
+    p_report.set_defaults(fn=cmd_report)
     return parser
 
 
