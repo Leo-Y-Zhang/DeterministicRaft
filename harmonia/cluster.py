@@ -73,6 +73,7 @@ class Cluster:
         client_interval: int | None = CLIENT_INTERVAL,
         record_history: bool = True,
         bugs: Bugs = NO_BUGS,
+        suppressed: frozenset[int] = frozenset(),
     ) -> None:
         if num_nodes < 1:
             raise ValueError("need at least one node")
@@ -81,6 +82,11 @@ class Cluster:
         self.seed = seed
         self.faults = faults
         self.bugs = bugs
+        # Each fault injection (partition-form / crash) gets an ordinal; the shrinker can
+        # SUPPRESS specific ordinals to test whether a bug still reproduces without them.
+        # The rng is drawn identically regardless, so an empty mask is byte-identical.
+        self._suppressed = suppressed
+        self._fault_seq = 0
         self.profile: FaultProfile = PROFILES[faults]
         self.sim = Simulator(seed)
         self.trace: list[str] = []
@@ -209,6 +215,14 @@ class Cluster:
                 row.return_step = self.sim.steps
                 row.observed = result
 
+    def _fire_fault(self) -> bool:
+        """Assign the next fault an ordinal; return False if the shrinker suppressed it.
+        Called only after all of a fault's rng draws, so suppression never desyncs the
+        stream and an empty mask leaves every digest untouched."""
+        idx = self._fault_seq
+        self._fault_seq += 1
+        return idx not in self._suppressed
+
     def _fault_tick(self) -> None:
         rng = self.sim.rng
         if self.profile.partitions:
@@ -219,7 +233,7 @@ class Cluster:
                 sides = {i: rng.randint(0, 1) for i in sorted(self.nodes)}
                 groups = [{i for i, s in sides.items() if s == 0},
                           {i for i, s in sides.items() if s == 1}]
-                if groups[0] and groups[1]:
+                if groups[0] and groups[1] and self._fire_fault():
                     self.set_partition(groups)
         if self.profile.crashes and rng.random() < 0.10:
             candidates = (
@@ -229,8 +243,10 @@ class Cluster:
             )
             if candidates:
                 victim = rng.choice(candidates)
-                self.pause(victim)
-                self.sim.schedule(rng.randint(100, 400), lambda: self._maybe_resume(victim))
+                resume_delay = rng.randint(100, 400)
+                if self._fire_fault():
+                    self.pause(victim)
+                    self.sim.schedule(resume_delay, lambda: self._maybe_resume(victim))
         self.sim.schedule(FAULT_INTERVAL, self._fault_tick)
 
     def _maybe_resume(self, node_id: int) -> None:
@@ -287,6 +303,12 @@ class Cluster:
         return pred(self)
 
     # -- inspection --------------------------------------------------------------
+
+    @property
+    def fault_count(self) -> int:
+        """How many fault injections the driver reached this run (the ordinal universe
+        the shrinker suppresses over)."""
+        return self._fault_seq
 
     def leaders(self) -> list[RaftNode]:
         return [n for i, n in sorted(self.nodes.items()) if n.role == LEADER and n.alive]
