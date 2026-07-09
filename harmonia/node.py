@@ -123,6 +123,7 @@ class RaftNode:
         self.leader_id: int | None = None
         self.alive: bool = True
         self.log_version: int = 0             # bumped on any log mutation (for checker)
+        self.incarnation: int = 0             # bumped on every crash-restart (for checker)
 
         # Leader-only volatile state, reinitialized after each election.
         self.next_index: dict[int, int] = {}
@@ -154,21 +155,35 @@ class RaftNode:
         self._arm_election_timer()
 
     def pause(self) -> None:
-        """Simulated crash: stop reacting. State is retained (== persisted)."""
+        """Simulated crash: lose ALL volatile state (Figure 2). Only currentTerm,
+        votedFor and the log are persistent (stable storage) and survive; everything
+        else -- role, commit/apply indexes, the state machine, leader bookkeeping -- is
+        rebuilt after restart by re-applying the persisted log."""
         self.alive = False
-        self._timer_seq += 1
+        self._reset_volatile()
 
     def resume(self) -> None:
+        """Restart from stable storage: come back as a follower holding only the
+        persistent triple. The commit index and state machine are re-derived as the node
+        re-learns the commit index from the leader and replays its log."""
         self.alive = True
-        self._timer_seq += 1
-        if self.role == LEADER:
-            # A paused leader resumes as leader of its (possibly stale) term; it
-            # steps down as soon as it hears a higher term. This is safe: election
-            # safety is per-term.
-            self._broadcast_heartbeats()
-            self._arm_heartbeat_timer()
-        else:
-            self._arm_election_timer()
+        self._arm_election_timer()
+
+    def _reset_volatile(self) -> None:
+        """Discard volatile state and bump the incarnation. currentTerm/votedFor/log are
+        deliberately NOT touched -- they are the persisted state that outlives a crash."""
+        self.role = FOLLOWER
+        self.commit_index = 0
+        self.last_applied = 0
+        self.applied = []
+        self.kv = KVStateMachine()
+        self.leader_id = None
+        self.next_index = {}
+        self.match_index = {}
+        self._votes = set()
+        self._client_index = {}
+        self._timer_seq += 1        # invalidate any in-flight timer callbacks
+        self.incarnation += 1
 
     # -- timers ---------------------------------------------------------------
 

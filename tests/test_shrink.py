@@ -81,7 +81,7 @@ class TestShrinkRealFailure:
 
 class TestShrinkOracleFailure:
     def test_shrinks_a_nonlinearizable_stale_read_failure(self):
-        sc = Scenario(nodes=3, seed=14, faults="chaos", steps=6000,
+        sc = Scenario(nodes=3, seed=0, faults="chaos", steps=6000,
                       bugs=Bugs(stale_local_reads=True))
         ce = shrink(sc)
         assert ce is not None
