@@ -190,7 +190,9 @@ class TestViolationErgonomics:
         assert "seed=1234" in str(exc.value) and "step=77" in str(exc.value)
 
     def test_violation_includes_replay_command(self):
-        checker = InvariantChecker(seed=9, replay_hint="harmonia replay --nodes 5 --seed 9 --faults chaos")
+        checker = InvariantChecker(
+            seed=9, replay_hint="harmonia replay --nodes 5 --seed 9 --faults chaos"
+        )
         a = FakeNode(0, role=LEADER, term=3)
         b = FakeNode(1, role=LEADER, term=3)
         with pytest.raises(InvariantViolation) as exc:

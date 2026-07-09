@@ -5,7 +5,6 @@ so these checks are bounded: some command must commit within a step budget.
 """
 
 from harmonia.cluster import Cluster
-from harmonia.node import LEADER
 
 BUDGET = 12_000  # steps; generous but bounded
 

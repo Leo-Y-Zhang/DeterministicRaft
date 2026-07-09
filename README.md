@@ -66,7 +66,7 @@ harmonia run --nodes 5 --seed 42 --faults chaos --steps 20000 --timeline out.svg
 ## The five safety properties -> checked invariants
 
 All five live in `harmonia/invariants.py` and are evaluated together after
-every simulator step by `SafetyChecker`:
+every simulator step by `InvariantChecker`:
 
 | Paper property | Checked by |
 |---|---|

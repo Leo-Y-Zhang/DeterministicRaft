@@ -11,11 +11,12 @@ InvariantViolation with the seed and step baked in for exact replay.
 from __future__ import annotations
 
 import hashlib
-from dataclasses import dataclass, field
-from typing import Any, Callable
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Any
 
 from .invariants import InvariantChecker
-from .node import LEADER, Message, RaftConfig, RaftNode
+from .node import DEFAULT_CONFIG, LEADER, Message, RaftConfig, RaftNode
 from .sim import PROFILES, FaultProfile, Network, Simulator
 
 CLIENT_INTERVAL = 100  # ms between client command attempts
@@ -45,7 +46,7 @@ class Cluster:
         num_nodes: int = 5,
         seed: int = 0,
         faults: str = "none",
-        config: RaftConfig = RaftConfig(),
+        config: RaftConfig = DEFAULT_CONFIG,
         client_interval: int | None = CLIENT_INTERVAL,
     ) -> None:
         if num_nodes < 1:
@@ -127,8 +128,11 @@ class Cluster:
                 if groups[0] and groups[1]:
                     self.set_partition(groups)
         if self.profile.crashes and rng.random() < 0.10:
-            candidates = [i for i in sorted(self.nodes)
-                          if self.nodes[i].alive] if len(self.net.crashed) < self._crash_limit else []
+            candidates = (
+                [i for i in sorted(self.nodes) if self.nodes[i].alive]
+                if len(self.net.crashed) < self._crash_limit
+                else []
+            )
             if candidates:
                 victim = rng.choice(candidates)
                 self.pause(victim)
@@ -179,7 +183,7 @@ class Cluster:
                 break
         return self.result()
 
-    def run_until(self, pred: Callable[["Cluster"], bool], max_steps: int = 50_000) -> bool:
+    def run_until(self, pred: Callable[[Cluster], bool], max_steps: int = 50_000) -> bool:
         """Step until pred(cluster) is true. Returns False if the budget runs out."""
         for _ in range(max_steps):
             if pred(self):

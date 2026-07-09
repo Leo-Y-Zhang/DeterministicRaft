@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from typing import cast
 
 from . import __version__
 from .cluster import Cluster, RunResult
@@ -152,7 +153,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    return args.fn(args)
+    return cast(int, args.fn(args))
 
 
 if __name__ == "__main__":
