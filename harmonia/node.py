@@ -125,6 +125,9 @@ class RaftNode:
         self.next_index: dict[int, int] = {}
         self.match_index: dict[int, int] = {}
         self._votes: set[int] = set()
+        # highest request id per client already present in this node's log; a leader uses
+        # it to avoid appending a duplicate of a retried request (rebuilt on election).
+        self._client_index: dict[int, int] = {}
 
         self._timer_seq: int = 0              # invalidates stale timer callbacks
 
@@ -227,8 +230,19 @@ class RaftNode:
         self.next_index = dict.fromkeys(self.peers, last + 1)
         self.match_index = dict.fromkeys(self.peers, 0)
         self.match_index[self.id] = last
+        self._rebuild_client_index()
         self._broadcast_heartbeats()
         self._arm_heartbeat_timer()
+
+    def _rebuild_client_index(self) -> None:
+        """Recompute the highest request id per client from this node's log, so a fresh
+        leader won't re-append requests it already holds (Ongaro 6.3, leader side)."""
+        index: dict[int, int] = {}
+        for entry in self.log:
+            cmd = Command.decode(entry.command)
+            if cmd.is_structured and cmd.req_id > index.get(cmd.client_id, -1):
+                index[cmd.client_id] = cmd.req_id
+        self._client_index = index
 
     def _maybe_win(self) -> None:
         if self.role == CANDIDATE and len(self._votes) * 2 > self.cluster_size:
@@ -237,9 +251,19 @@ class RaftNode:
     # -- client interface -----------------------------------------------------
 
     def client_command(self, command: str) -> bool:
-        """Append a client command if this node believes it is the leader."""
+        """Append a client command if this node believes it is the leader.
+
+        Leader-side dedup: a structured request already present in this leader's log (a
+        retry) is acknowledged without appending a second entry (Ongaro 6.3). Duplicates
+        that still slip in via a different leader are caught again at apply time."""
         if self.role != LEADER or not self.alive:
             return False
+        cmd = Command.decode(command)
+        if cmd.is_structured:
+            if cmd.req_id <= self._client_index.get(cmd.client_id, -1):
+                self._record("dedup", f"n{self.id}|{command}")
+                return True
+            self._client_index[cmd.client_id] = cmd.req_id
         self.log.append(Entry(self.term, command))
         self.log_version += 1
         self.match_index[self.id] = self.last_log_index()

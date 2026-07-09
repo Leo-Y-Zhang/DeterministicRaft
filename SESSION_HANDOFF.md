@@ -25,7 +25,14 @@ byte-identical replay from a seed — guarded by a golden-digest tripwire from S
       invoke/return/observed `history` via a counter-driven `workload_command` (3 clients,
       3 keys). ZERO new rng draws (rng_calls unchanged on all 12 goldens; digests
       rebaselined for the richer command text only). 179 -> 199 tests.
-- [ ] Step 2 — Client sessions + exactly-once dedup
+- [x] Step 2 — Client sessions + exactly-once dedup. Two layers: (1) apply-time in
+      `KVStateMachine.sessions` (a duplicate `(client_id, req_id)` returns the CACHED
+      result, never re-executes — matters for cas, whose recompute would say "fail");
+      (2) leader-side in `client_command` (a leader won't re-append a request already in
+      its log; `_client_index` rebuilt from the log on `_become_leader`). Retry-capable
+      client driver: 3 clients, one op outstanding each, round-robin, retry-until-commit.
+      Deliberate golden rebaseline (retries lengthen the stream -> digests + rng_calls
+      both move, intentional). 199 -> 212 tests; replay byte-identical.
 - [ ] Step 3 — CO-CROWN A: linearizability oracle (pure; TDD in isolation first)
 - [ ] Step 4 — Bug-injection harness + README failure gallery
 - [ ] Step 5 — CO-CROWN B: schedule shrinker (ddmin) + scriptable-schedule prereq
@@ -39,18 +46,20 @@ byte-identical replay from a seed — guarded by a golden-digest tripwire from S
 bonuses — safe to merge after any completed step if time runs out.
 
 ## Exact next step
-Step 2 — Client sessions + exactly-once dedup (Ongaro 6.3). Make retries honest before
-the oracle exists: Raft's at-least-once delivery means a retried command applies twice
-without dedup. Add per-`(client_id, seq)` session state + a leader-side dedup/response
-cache in the apply path (a retried command with a seen seq returns the cached result and
-does NOT append a second log entry). Add a deterministic retry driver that resubmits
-pending ops to the current leader (client_id/req_id are deterministic counters; any
-retry-target selection draw is APPENDED after the existing client draw, never inserted).
-Deduped completed ops feed the history. This changes `applied[]` -> deliberate golden
-rebaseline. Tests: duplicate-seq-applies-once (log length + applied count unchanged on
-retry), cached-result-on-retry, dedup-survives-leader-change, chaos property (every
-`(client_id, seq)` applies <= once on every node). Guardrail: APPEND-NEVER-INSERT; keep
-the invariant checker + linearizability-precursor (test_history) green.
+Step 3 — CO-CROWN A: the linearizability oracle (a PURE function of the recorded
+`Cluster.history`). New module `harmonia/linearizability.py`: model each op as an
+invoke/return interval against a reference sequential KV register/map; search for a
+real-time-consistent linearization (Wing-Gong / linearize-and-remove with a memoized
+visited set + bounded concurrency). Catches stale reads, acknowledged-but-lost writes,
+reordered effects that the 5 internal invariants CANNOT express. TDD IN ISOLATION FIRST
+on hand-built histories (known-linearizable accepts; classic non-linearizable rejects
+with a witness; empty/single trivial; pinning-read pass/fail; terminates-in-budget),
+THEN wire to check `Cluster.history` at run end + add to the chaos sweep as an extra
+assertion. Bound the search (cap in-flight ops + history length in sweeps, memoize);
+mark the exhaustive path slow-only. Determinism: pure function -> zero rng, digests
+UNCHANGED (guardrail: assert digest identical with the oracle on vs off). Handle
+in-flight ops (return_step None) by trying both including/excluding them. Positive
+control comes in Step 4 (a deliberately-buggy stale-read mode the oracle must CATCH).
 
 ## Verify commands
 ```

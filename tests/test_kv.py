@@ -72,12 +72,12 @@ class TestKVStateMachine:
 
     def test_snapshot_is_sorted_copy(self):
         kv = KVStateMachine()
-        for i in (2, 0, 1):
-            kv.apply(Command(0, i, PUT, f"k{i}", f"v{i}"))
+        for req, key in enumerate(["k2", "k0", "k1"]):  # monotonic reqs, unsorted keys
+            kv.apply(Command(0, req, PUT, key, f"v{req}"))
         snap = kv.snapshot()
-        assert list(snap) == ["k0", "k1", "k2"]
+        assert list(snap) == ["k0", "k1", "k2"]  # sorted
         snap["k0"] = "mutated"
-        assert kv.store["k0"] == "v0"  # snapshot is a copy
+        assert kv.store["k0"] == "v1"  # snapshot is a copy (k0 was put at req 1)
 
 
 class TestHistoryEntry:
