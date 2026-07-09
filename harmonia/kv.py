@@ -74,13 +74,37 @@ class Command:
 
 
 class KVStateMachine:
-    """A deterministic string->string key-value store. Applying a command mutates the
-    store (for put/cas) and returns the client-visible result string."""
+    """A deterministic string->string key-value store with per-client exactly-once
+    sessions (Ongaro dissertation 6.3). Applying a command mutates the store (put/cas)
+    and returns the client-visible result; a *duplicate* command (a client re-request
+    of a request id it has already applied) returns the CACHED result and re-executes
+    nothing. This matters even though the store itself is nearly idempotent: a retried
+    ``cas`` recomputed from scratch would return "fail" (the value already moved), but
+    the client's operation actually succeeded -- the session cache returns the original
+    "ok". The session table is part of the replicated state, so every node dedups
+    identically. Monotonic per-client request ids (clients issue one op at a time) make
+    "already applied" a simple ``req_id <= last`` test."""
 
     def __init__(self) -> None:
         self.store: dict[str, str] = {}
+        self.sessions: dict[int, tuple[int, str]] = {}  # client_id -> (last_req_id, result)
+
+    def is_duplicate(self, cmd: Command) -> bool:
+        """True if this structured command has already been applied for its client."""
+        last = self.sessions.get(cmd.client_id)
+        return last is not None and cmd.req_id <= last[0]
 
     def apply(self, cmd: Command) -> str:
+        if not cmd.is_structured:
+            return ""  # NOOP / opaque command: no effect, empty result
+        last = self.sessions.get(cmd.client_id)
+        if last is not None and cmd.req_id <= last[0]:
+            return last[1]  # duplicate: cached result, no re-execution
+        result = self._execute(cmd)
+        self.sessions[cmd.client_id] = (cmd.req_id, result)
+        return result
+
+    def _execute(self, cmd: Command) -> str:
         if cmd.op == PUT:
             self.store[cmd.key] = cmd.value
             return "ok"
@@ -91,7 +115,7 @@ class KVStateMachine:
                 self.store[cmd.key] = cmd.value
                 return "ok"
             return "fail"
-        return ""  # NOOP / opaque command: no effect, empty result
+        return ""
 
     def snapshot(self) -> dict[str, str]:
         """A copy of the store (deterministic: sorted keys)."""

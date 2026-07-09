@@ -32,10 +32,10 @@ WORKLOAD_KEYS = ("k0", "k1", "k2")
 WORKLOAD_OPS = (PUT, PUT, GET, CAS)
 
 
-def workload_command(seq: int) -> Command:
-    """The seq-th client command. A pure function of ``seq`` (no randomness)."""
-    client_id = seq % WORKLOAD_CLIENTS
-    req_id = seq // WORKLOAD_CLIENTS
+def client_workload(client_id: int, req_id: int) -> Command:
+    """The (client_id, req_id)-th client command. A pure function of its inputs (no
+    randomness), so a retry of the same request reproduces byte-identical bytes."""
+    seq = req_id * WORKLOAD_CLIENTS + client_id
     key = WORKLOAD_KEYS[seq % len(WORKLOAD_KEYS)]
     op = WORKLOAD_OPS[seq % len(WORKLOAD_OPS)]
     if op == GET:
@@ -102,14 +102,18 @@ class Cluster:
         )
         self.stats: dict[str, int] = {
             "elections": 0, "leaders_elected": 0, "partitions": 0, "heals": 0,
-            "crashes": 0, "resumes": 0, "commands_submitted": 0,
+            "crashes": 0, "resumes": 0, "commands_submitted": 0, "retries": 0,
         }
         self._crash_limit = (num_nodes - 1) // 2  # keep a majority alive under chaos
         for i in ids:
             self.nodes[i].start()
+        # Client-driver state (always initialised so the apply hook is safe even when no
+        # client driver is scheduled); the tick only runs when client_interval is set.
+        self._client_interval = client_interval or CLIENT_INTERVAL
+        self._next_req = [0] * WORKLOAD_CLIENTS    # per-client next request id
+        self._outstanding: dict[int, str] = {}     # client_id -> its unfinished op (encoded)
+        self._client_turn = 0                      # round-robin cursor over clients
         if client_interval:
-            self._client_interval = client_interval
-            self._next_command = 0
             self.sim.schedule(client_interval, self._client_tick)
         if self.profile.partitions or self.profile.crashes:
             self.sim.schedule(FAULT_INTERVAL, self._fault_tick)
@@ -131,28 +135,41 @@ class Cluster:
     # -- drivers --------------------------------------------------------------
 
     def _client_tick(self) -> None:
-        """A client submits a command to a randomly chosen node; only a node that
-        currently believes it is leader accepts. Occasionally that is a stale
-        leader, which is exactly the kind of divergence Raft must repair.
+        """One round-robin client acts each tick. A client keeps ONE operation
+        outstanding at a time; it invokes a fresh op when idle, otherwise RETRIES its
+        pending op. Each attempt goes to a randomly chosen node and only lands if that
+        node currently believes it is leader -- so under faults the same request reaches
+        several leaders and must be deduplicated exactly once.
 
-        The single rng draw (which node to try) is unchanged from before; the command
-        itself is derived deterministically from a counter, so no draw is inserted."""
+        The single rng draw (which node to try) keeps its position; client selection and
+        command bytes are derived deterministically, so no draw is inserted mid-stream.
+        Retries do append more entries/messages, which legitimately lengthens the stream
+        (an intentional behaviour change, not a desync)."""
+        client_id = self._client_turn % WORKLOAD_CLIENTS
+        self._client_turn += 1
         target = self.sim.rng.choice(sorted(self.nodes))
         node = self.nodes[target]
-        if node.alive and node.role == LEADER:
-            command = workload_command(self._next_command)
-            self._next_command += 1
-            self.stats["commands_submitted"] += 1
+
+        encoded = self._outstanding.get(client_id)
+        if encoded is None:  # idle client invokes a new operation
+            command = client_workload(client_id, self._next_req[client_id])
             encoded = command.encode()
-            self.record("client", f"n{target}|{encoded}")
+            self._outstanding[client_id] = encoded
+            self.stats["commands_submitted"] += 1
+            self.record("client", f"n{target}|c{client_id}|{encoded}")
             self._invoke(command, encoded)
+        else:  # a retry of the client's still-unfinished operation
+            self.stats["retries"] += 1
+            self.record("retry", f"n{target}|c{client_id}|{encoded}")
+
+        if node.alive and node.role == LEADER:
             node.client_command(encoded)
         self.sim.schedule(self._client_interval, self._client_tick)
 
-    # -- client-observed history (passive: no randomness, no trace output) ------
+    # -- client-observed history + retry bookkeeping ----------------------------
 
     def _invoke(self, command: Command, encoded: str) -> None:
-        """Record that a client submitted ``command`` at the current step."""
+        """Record (once) that a client invoked ``command`` at the current step."""
         if not self._record_history:
             return
         row = HistoryEntry(
@@ -164,16 +181,22 @@ class Cluster:
         self._pending[encoded] = row
 
     def _on_apply(self, encoded: str, result: str) -> None:
-        """Complete the pending client op when the state machine first applies it.
-
-        Fires once per node per applied entry; the first application (by the leader,
-        which commits first) fixes the client-visible return step and result."""
-        if not self._record_history:
+        """When the state machine first applies an operation, let its client move on and
+        fix the client-visible return step + result. Fires once per node per applied
+        entry; the first application (the leader, which commits first) wins. Client
+        bookkeeping runs regardless of ``record_history`` so recording never alters a
+        run's behaviour (the history list is the only thing it gates)."""
+        cmd = Command.decode(encoded)
+        if not cmd.is_structured:
             return
-        row = self._pending.pop(encoded, None)
-        if row is not None:
-            row.return_step = self.sim.steps
-            row.observed = result
+        if self._outstanding.get(cmd.client_id) == encoded:
+            del self._outstanding[cmd.client_id]
+            self._next_req[cmd.client_id] += 1
+        if self._record_history:
+            row = self._pending.pop(encoded, None)
+            if row is not None:
+                row.return_step = self.sim.steps
+                row.observed = result
 
     def _fault_tick(self) -> None:
         rng = self.sim.rng

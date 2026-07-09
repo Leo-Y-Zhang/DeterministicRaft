@@ -37,15 +37,18 @@ class TestBasicReplication:
         assert len(prefixes) == 1
 
     def test_commands_apply_in_submission_order(self):
-        from harmonia.cluster import WORKLOAD_CLIENTS
         from harmonia.kv import Command
         c = elected(seed=23)
         c.run_until(lambda c: all(len(n.applied) >= 5 for n in c.nodes.values()), 60_000)
-        cmds = [Command.decode(s) for s in c.nodes[0].applied[:5]]
-        # reconstruct each command's global submission index; a stable single leader
-        # commits them in exactly that order.
-        seqs = [cmd.req_id * WORKLOAD_CLIENTS + cmd.client_id for cmd in cmds]
-        assert seqs == sorted(seqs)
+        cmds = [Command.decode(s) for s in c.nodes[0].applied]
+        # each client issues one request at a time, so its request ids must appear in
+        # strictly increasing order in the committed log (per-client FIFO / session order).
+        last: dict[int, int] = {}
+        for cmd in cmds:
+            if not cmd.is_structured:
+                continue
+            assert cmd.req_id > last.get(cmd.client_id, -1)
+            last[cmd.client_id] = cmd.req_id
 
     def test_commit_index_monotonic_under_chaos(self):
         # the checker enforces CommitIndexMonotonic after every step; a full
