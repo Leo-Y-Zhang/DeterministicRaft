@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/GreenPandaTech/Harmonia/actions/workflows/ci.yml/badge.svg)](https://github.com/GreenPandaTech/Harmonia/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+Proprietary - All Rights Reserved (c) 2026 GreenPandaTech - portfolio viewing only.
 
 A paper-faithful implementation of the Raft consensus algorithm (Ongaro &
 Ousterhout, *In Search of an Understandable Consensus Algorithm*, USENIX ATC
@@ -231,4 +231,4 @@ of FoundationDB, TigerBeetle and Jepsen (no affiliation).
 
 ## License
 
-MIT — Copyright (c) 2026 GreenPandaTech.
+Proprietary - All Rights Reserved (c) 2026 GreenPandaTech - portfolio viewing only.
