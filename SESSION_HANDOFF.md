@@ -13,8 +13,11 @@ schedule shrinker** (ddmin to a minimal counterexample). Then make the Raft real
 byte-identical replay from a seed — guarded by a golden-digest tripwire from Step 0.
 
 ## Build order (spec steps) — status
-- [ ] Step 0 — Determinism tripwire + tooling gate (ruff, mypy --strict, golden-digest
-      corpus, rng-draw-order guard). NO behavior change; 151 tests unchanged.
+- [x] Step 0 — Determinism tripwire + tooling gate. ruff (E/F/W/I/UP/B/C4/SIM) + mypy
+      --strict clean + in CI; golden-digest corpus (12 configs) + rng-draw-count guard in
+      `tests/_goldens.py`/`goldens.json` (regenerate: `.venv/Scripts/python.exe
+      tests/_goldens.py`); README SafetyChecker->InvariantChecker. Proven behavior-neutral
+      vs pristine code (worktree digest check). 151 -> 179 tests.
 - [ ] Step 1 — KV state machine + structured client-op history (prereq)
 - [ ] Step 2 — Client sessions + exactly-once dedup
 - [ ] Step 3 — CO-CROWN A: linearizability oracle (pure; TDD in isolation first)
@@ -30,12 +33,17 @@ byte-identical replay from a seed — guarded by a golden-digest tripwire from S
 bonuses — safe to merge after any completed step if time runs out.
 
 ## Exact next step
-Step 0: add ruff config + tighten mypy to `--strict`; fix the known findings (ruff:
-unused `field` import in cluster.py, unused `LEADER` in test_safety_sweep.py, 3× `E741`
-ambiguous `l` in test_cli.py; mypy-strict: `cli.py:155` returning Any); add a
-golden-digest corpus test + rng-draw-count guard test + a `regenerate-goldens` path;
-add ruff + mypy-strict to CI; fix README `SafetyChecker`→`InvariantChecker` slip. Keep
-all 151 tests green and every existing digest UNCHANGED.
+Step 1 — KV state machine + structured client-op history (PREREQUISITE for the oracle,
+sessions, reads). Add a deterministic `KVStateMachine` (put/get/cas) applied on
+`_set_commit_index`; replace opaque `cmd-N` strings with a structured `ClientOp`
+carrying `(client_id, req_id, op, key, value)`; record a passive global client history
+of `(client_id, req_id, op, invoke_step, return_step, observed_value)` off the apply
+path (draws NO randomness — reuse the single existing `client_tick` draw, enrich the
+payload only). This DELIBERATELY changes trace bytes (richer command text) → a one-time
+golden rebaseline in THIS commit via `.venv/Scripts/python.exe tests/_goldens.py`;
+review the diff shows only the intended text move. First prove
+`test_history_recording_is_pure` (digest identical with history on vs off) BEFORE the
+rebaseline. Guardrail: APPEND-NEVER-INSERT — add no hot-path rng draw.
 
 ## Verify commands
 ```

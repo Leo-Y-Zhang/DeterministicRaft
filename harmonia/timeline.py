@@ -58,10 +58,10 @@ def render_timeline(
         return TOP + node * ROW + ROW / 2
 
     # -- reconstruct per-node (term, role, alive) intervals --------------------
-    cur_term = {i: 0 for i in range(num_nodes)}
-    cur_role = {i: "follower" for i in range(num_nodes)}
-    cur_alive = {i: True for i in range(num_nodes)}
-    since = {i: 0 for i in range(num_nodes)}
+    cur_term = dict.fromkeys(range(num_nodes), 0)
+    cur_role = dict.fromkeys(range(num_nodes), "follower")
+    cur_alive = dict.fromkeys(range(num_nodes), True)
+    since = dict.fromkeys(range(num_nodes), 0)
     segments: dict[int, list[tuple[int, int, int, str, bool]]] = {i: [] for i in range(num_nodes)}
     marks: list[str] = []
     partitions: list[tuple[int, int]] = []

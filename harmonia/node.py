@@ -16,8 +16,9 @@ Log indices are 1-based, exactly as in the paper. Index i lives at self.log[i-1]
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Callable
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from .sim import Simulator
@@ -76,6 +77,10 @@ class RaftConfig:
     heartbeat_interval: int = 50      # ms
 
 
+# Shared immutable default (frozen dataclass): safe to reuse as an argument default.
+DEFAULT_CONFIG = RaftConfig()
+
+
 class RaftNode:
     """One Raft server. All I/O goes through callables injected by the cluster."""
 
@@ -83,10 +88,10 @@ class RaftNode:
         self,
         node_id: int,
         peer_ids: list[int],
-        sim: "Simulator",
+        sim: Simulator,
         send: Callable[[int, int, Message], None],
         record: Callable[[str, str], None],
-        config: RaftConfig = RaftConfig(),
+        config: RaftConfig = DEFAULT_CONFIG,
     ) -> None:
         self.id = node_id
         self.peers = sorted(peer_ids)
@@ -214,8 +219,8 @@ class RaftNode:
         self.leader_id = self.id
         self._record("role", f"n{self.id}|leader|term={self.term}")
         last = self.last_log_index()
-        self.next_index = {p: last + 1 for p in self.peers}
-        self.match_index = {p: 0 for p in self.peers}
+        self.next_index = dict.fromkeys(self.peers, last + 1)
+        self.match_index = dict.fromkeys(self.peers, 0)
         self.match_index[self.id] = last
         self._broadcast_heartbeats()
         self._arm_heartbeat_timer()
@@ -233,7 +238,10 @@ class RaftNode:
         self.log.append(Entry(self.term, command))
         self.log_version += 1
         self.match_index[self.id] = self.last_log_index()
-        self._record("append", f"n{self.id}|index={self.last_log_index()}|term={self.term}|{command}")
+        self._record(
+            "append",
+            f"n{self.id}|index={self.last_log_index()}|term={self.term}|{command}",
+        )
         self._broadcast_heartbeats()  # replicate eagerly instead of waiting a beat
         return True
 

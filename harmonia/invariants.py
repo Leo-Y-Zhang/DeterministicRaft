@@ -12,7 +12,8 @@ the logs actually changed.
 
 from __future__ import annotations
 
-from typing import Mapping, Protocol
+from collections.abc import Mapping
+from typing import Protocol
 
 from .node import LEADER, Entry
 
@@ -56,9 +57,10 @@ class InvariantChecker:
         # per-node caches
         self._prev_commit: dict[int, int] = {}
         self._applied_seen: dict[int, int] = {}
-        self._leader_snapshot: dict[int, tuple[int, int, list[Entry]]] = {}  # id -> (term, ver, log copy)
+        # _leader_snapshot: id -> (term, ver, log copy); _completeness_checked: id -> (term, ver, n)
+        self._leader_snapshot: dict[int, tuple[int, int, list[Entry]]] = {}
         self._pair_checked: dict[tuple[int, int], tuple[int, int]] = {}
-        self._completeness_checked: dict[int, tuple[int, int, int]] = {}  # id -> (term, ver, n committed)
+        self._completeness_checked: dict[int, tuple[int, int, int]] = {}
 
     def _fail(self, invariant: str, detail: str, step: int) -> None:
         raise InvariantViolation(invariant, detail, self.seed, step, self.replay_hint)
@@ -76,7 +78,9 @@ class InvariantChecker:
 
     # -- Election Safety: at most one leader can be elected in a given term ----
 
-    def _check_election_safety(self, nodes: Mapping[int, NodeView], ids: list[int], step: int) -> None:
+    def _check_election_safety(
+        self, nodes: Mapping[int, NodeView], ids: list[int], step: int
+    ) -> None:
         for i in ids:
             n = nodes[i]
             if n.role == LEADER:
@@ -87,7 +91,9 @@ class InvariantChecker:
 
     # -- Leader Append-Only: a leader never overwrites or deletes its entries --
 
-    def _check_leader_append_only(self, nodes: Mapping[int, NodeView], ids: list[int], step: int) -> None:
+    def _check_leader_append_only(
+        self, nodes: Mapping[int, NodeView], ids: list[int], step: int
+    ) -> None:
         for i in ids:
             n = nodes[i]
             if n.role != LEADER:
@@ -153,7 +159,9 @@ class InvariantChecker:
 
     # -- Leader Completeness: committed entries appear in all future leaders ---
 
-    def _check_leader_completeness(self, nodes: Mapping[int, NodeView], ids: list[int], step: int) -> None:
+    def _check_leader_completeness(
+        self, nodes: Mapping[int, NodeView], ids: list[int], step: int
+    ) -> None:
         for i in ids:
             n = nodes[i]
             if n.role != LEADER:
@@ -174,7 +182,9 @@ class InvariantChecker:
 
     # -- State Machine Safety: no two nodes apply different commands at an index
 
-    def _check_state_machine_safety(self, nodes: Mapping[int, NodeView], ids: list[int], step: int) -> None:
+    def _check_state_machine_safety(
+        self, nodes: Mapping[int, NodeView], ids: list[int], step: int
+    ) -> None:
         for i in ids:
             n = nodes[i]
             seen = self._applied_seen.get(i, 0)
