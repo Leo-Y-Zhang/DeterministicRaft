@@ -112,22 +112,61 @@ is caught by exactly the property it targets:
 The last one is the point: it slips past every internal invariant and is caught
 only by the client-history oracle. See `tests/test_bugs.py`.
 
+## Shrinking a failure to a minimal counterexample
+
+A seed that fails somewhere in 20,000 steps with dozens of faults is a haystack.
+`harmonia/shrink.py` delta-debugs it into the needle: given a failing scenario, it
+runs [Zeller's ddmin](https://www.st.cs.uni-saarland.de/dd/) over the fault
+injections to a *1-minimal* set (suppressing any one more makes the bug vanish),
+then binary-searches the step budget — each candidate a fresh, mask-driven,
+byte-identical replay, so the shrinker is itself perfectly deterministic. Point it
+at an injected bug and it hands back the handful of partitions and crashes that
+actually matter, plus a runnable replay. The fault-suppression mask leaves the RNG
+stream untouched when empty, so an un-shrunk run is bit-for-bit an ordinary one.
+
+## Full Raft: crash-restart, snapshots, linearizable reads
+
+The core is not a toy subset — the hard sections of the paper are here, each behind
+a config flag and each with its own determinism-pinned golden matrix:
+
+- **Real crash-restart (Figure 2).** A crash discards *all* volatile state; only
+  `currentTerm`, `votedFor` and the log survive. A restart rebuilds the state
+  machine by replaying the log — the checker tracks a per-node *incarnation* so a
+  legitimately-reset commit index is not mistaken for a regression.
+- **Log compaction + `InstallSnapshot` (§7).** Once enough applied entries pile up,
+  a node folds its committed prefix into a snapshot and discards it; a follower that
+  falls behind the compaction point is re-seeded with the whole state-machine image.
+  The invariant checker was generalized *in lockstep* to reason over
+  (compacted prefix + live tail) — with planted-bug tests proving it still catches a
+  real cross-boundary divergence and never false-positives on legal compaction.
+- **ReadIndex linearizable reads (§8).** A `get` is served from local state without a
+  log entry, but only after the leader confirms it still leads (a majority of
+  heartbeat acks in its term) *and* has committed an entry in its own term. The
+  linearizability oracle earned its keep here — it caught stale reads while that
+  second condition was missing.
+
 ## Install & run
 
-Requires Python 3.11+. Zero runtime dependencies; dev deps are pytest and mypy.
+Requires Python 3.11+. Zero runtime dependencies; dev deps are pytest, mypy and ruff.
 
 ```bash
 python -m venv .venv
 .venv/Scripts/python.exe -m pip install -e ".[dev]"   # Windows
 # .venv/bin/python -m pip install -e ".[dev]"          # Linux/macOS
 
-python -m pytest -q          # 151 tests (a longer sweep is marked slow)
-python -m mypy harmonia       # clean
+python -m pytest -q            # 340+ tests (a longer sweep is marked slow)
+python -m mypy harmonia         # clean (strict)
+python -m ruff check .          # clean
 
-harmonia run --nodes 5 --seed 42 --faults chaos --steps 20000 --timeline out.svg
-harmonia check --seeds 300 --faults chaos
-harmonia replay --seed 42     # identical to run: byte-for-byte event trace
+harmonia run    --nodes 5 --seed 42 --faults chaos --steps 20000 --timeline out.svg
+harmonia check  --seeds 300 --faults chaos
+harmonia replay --seed 42       # identical to run: byte-for-byte event trace
+harmonia report --seed 42 --faults chaos --out report.html   # self-contained HTML
 ```
+
+`harmonia report` writes one standalone HTML page — run summary, fault/verification
+stats, the inline SVG timeline and the linearizability verdict — the whole run on a
+single shareable artifact.
 
 The `harmonia` console script is installed by the editable install; the same
 commands run via `python -m harmonia ...` without it.
@@ -139,15 +178,23 @@ and step), `2` usage error.
 
 ```
 harmonia/
-  sim.py         discrete-event core: virtual clock, event queue, seeded RNG,
-                 network faults (drop/duplicate/delay/reorder/partition)
-  node.py        the Raft state machine: follower/candidate/leader,
-                 RequestVote + AppendEntries, commit rules, log repair
-  invariants.py  the five safety properties, evaluated after every step
-  cluster.py     wires N nodes to the simulated network; fault profiles
-  timeline.py    SVG timeline renderer (no dependencies)
-  cli.py         run / check / replay
-tests/           151 tests: unit, scenario, invariant sweeps, determinism
+  sim.py              discrete-event core: virtual clock, event queue, seeded RNG,
+                      network faults (drop/duplicate/delay/reorder/partition)
+  node.py             the Raft state machine: election, replication, commit rules,
+                      log repair, crash-restart, snapshots/InstallSnapshot, ReadIndex
+  kv.py               the replicated key-value state machine, structured commands,
+                      per-client sessions, snapshots, client-op history
+  invariants.py       the five safety properties, evaluated after every step
+                      (crash- and snapshot-aware)
+  linearizability.py  the client-history oracle (Wing-Gong linearize-and-remove)
+  bugs.py             injectable consensus bugs (all off by default)
+  shrink.py           ddmin schedule shrinker -> minimal counterexample
+  cluster.py          wires N nodes to the simulated network; client + fault drivers
+  timeline.py         SVG timeline renderer (no dependencies)
+  report.py           self-contained HTML run report
+  cli.py              run / check / replay / report
+tests/                340+ tests: unit, scenario, invariant sweeps, oracle, shrinker,
+                      crash-restart, snapshots, ReadIndex, determinism goldens
 ```
 
 Design rule: `node.py` contains *only* the algorithm — no I/O, no clocks, no
@@ -155,23 +202,32 @@ randomness of its own — which is exactly what makes it simulable.
 
 ## Scope & limitations
 
-- **No cluster membership changes** (single fixed configuration) and **no log
-  compaction / snapshots** — the two major Raft extensions are out of scope.
-- **No disk persistence**: "stable storage" is simulated in memory; crash
-  recovery restores from that simulated store.
+Deliberately honest about the edges:
+
+- **Linearizability is checked over a bounded key-value register model** (`put` /
+  `get` / `cas`). The oracle's search is bounded (concurrency width and a
+  states-explored budget); it is a sound *detector* of non-linearizable histories
+  for the workloads here, not a general model checker.
+- **No cluster membership changes** (single fixed configuration). Snapshots,
+  crash-restart and ReadIndex reads *are* implemented; single-server membership is
+  the one remaining major Raft extension left out.
+- **No real disk I/O**: "stable storage" is modelled in memory (a crash clears
+  volatile state and a restart rebuilds from the persisted log/snapshot). Real
+  files would inject OS-level nondeterminism for no correctness gain.
 - Fault injection covers message-level faults and node crash/restart; it does
-  not model Byzantine behaviour (Raft assumes non-Byzantine nodes).
-- Liveness is checked only under bounded fault profiles — under sustained
-  chaos, Raft correctly prioritizes safety over progress, so no liveness
-  guarantee is asserted there.
+  **not** model Byzantine behaviour (Raft assumes non-Byzantine nodes).
+- Liveness is checked only under bounded fault profiles — under sustained chaos,
+  Raft correctly prioritizes safety over progress, so no liveness guarantee is
+  asserted there.
+
+Educational / portfolio project; deterministic simulation testing is the inspiration
+of FoundationDB, TigerBeetle and Jepsen (no affiliation).
 
 ## Roadmap
 
-- Membership changes (joint consensus), with invariants extended to config
-  overlap.
-- Log compaction with InstallSnapshot.
+- Single-server cluster membership changes, with the checker extended to per-config
+  majorities.
 - A nemesis vocabulary for hand-authored fault scenarios.
-- Linearizability checking of client reads.
 
 ## License
 
