@@ -23,7 +23,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from .bugs import NO_BUGS, Bugs
-from .kv import Command, KVStateMachine
+from .kv import Command, KVStateMachine, Snapshot
 
 if TYPE_CHECKING:
     from .sim import Simulator
@@ -72,7 +72,19 @@ class AppendReply:
     match_index: int
 
 
-Message = RequestVote | VoteReply | AppendEntries | AppendReply
+@dataclass(frozen=True)
+class InstallSnapshot:
+    """Sent to a follower that has fallen behind the leader's compaction point (section 7).
+    Carries the whole state-machine image instead of individual log entries."""
+    term: int
+    leader: int
+    last_index: int
+    last_term: int
+    store: dict[str, str]
+    sessions: dict[int, tuple[int, str]]
+
+
+Message = RequestVote | VoteReply | AppendEntries | AppendReply | InstallSnapshot
 
 
 @dataclass(frozen=True)
@@ -80,6 +92,8 @@ class RaftConfig:
     election_timeout_min: int = 150   # ms; each timer draws uniformly from this range,
     election_timeout_max: int = 300   # which is what breaks split votes (section 5.2)
     heartbeat_interval: int = 50      # ms
+    snapshot_threshold: int = 0       # compact once this many applied entries pile up above
+    #                                   the base; 0 disables snapshots (default)
 
 
 # Shared immutable default (frozen dataclass): safe to reuse as an argument default.
@@ -120,12 +134,15 @@ class RaftNode:
         # helpers below so the rest of the algorithm never sees the physical offset.
         self.base_index: int = 0
         self.base_term: int = 0
+        self.snapshot: Snapshot | None = None  # persisted compacted state (Figure 2 + §7)
 
         # Volatile state.
         self.role: str = FOLLOWER
         self.commit_index: int = 0
         self.last_applied: int = 0
-        self.applied: list[str] = []          # applied command labels (feeds the checker)
+        # applied command labels for logical indices (base_index, last_applied]; applied[k]
+        # is logical index base_index+1+k. Feeds State Machine Safety.
+        self.applied: list[str] = []
         self.kv = KVStateMachine()            # the replicated state machine (see kv.py)
         self.leader_id: int | None = None
         self.alive: bool = True
@@ -186,13 +203,20 @@ class RaftNode:
         self._arm_election_timer()
 
     def _reset_volatile(self) -> None:
-        """Discard volatile state and bump the incarnation. currentTerm/votedFor/log are
-        deliberately NOT touched -- they are the persisted state that outlives a crash."""
+        """Discard volatile state and bump the incarnation. currentTerm/votedFor/log/
+        base_index/snapshot are persisted and outlive a crash. The state machine is
+        rebuilt from the persisted snapshot (if any); the commit index resets to the
+        snapshot boundary and is re-learned from the leader as the log tail is re-applied."""
         self.role = FOLLOWER
-        self.commit_index = 0
-        self.last_applied = 0
-        self.applied = []
         self.kv = KVStateMachine()
+        if self.snapshot is not None:
+            self.kv.restore(self.snapshot.store, self.snapshot.sessions)
+            self.commit_index = self.snapshot.last_index
+            self.last_applied = self.snapshot.last_index
+        else:
+            self.commit_index = 0
+            self.last_applied = 0
+        self.applied = []
         self.leader_id = None
         self.next_index = {}
         self.match_index = {}
@@ -321,6 +345,8 @@ class RaftNode:
             self._on_append_entries(msg)
         elif isinstance(msg, AppendReply):
             self._on_append_reply(msg)
+        elif isinstance(msg, InstallSnapshot):
+            self._on_install_snapshot(msg)
 
     # -- RequestVote RPC (Figure 2, receiver implementation) -------------------
 
@@ -420,13 +446,59 @@ class RaftNode:
             self.next_index[msg.follower] = max(1, self.next_index.get(msg.follower, 1) - 1)
             self._send_append_entries(msg.follower)
 
+    # -- InstallSnapshot RPC (section 7, receiver implementation) --------------
+
+    def _on_install_snapshot(self, msg: InstallSnapshot) -> None:
+        if msg.term < self.term:
+            self._send(self.id, msg.leader, AppendReply(self.term, self.id, False, 0))
+            return
+        if msg.term > self.term or self.role != FOLLOWER:
+            self._become_follower(msg.term)
+        self.leader_id = msg.leader
+        self._arm_election_timer()
+        if msg.last_index <= self.base_index:
+            # we already cover this snapshot; just acknowledge our progress
+            self._send(self.id, msg.leader,
+                       AppendReply(self.term, self.id, True, self.last_log_index()))
+            return
+        # Install the image, keeping a consistent log tail beyond last_index if we have one
+        # (otherwise discard the whole log). Uses the OLD base_index for the truncation.
+        keep_tail = (self.last_log_index() >= msg.last_index
+                     and self.term_at(msg.last_index) == msg.last_term)
+        if keep_tail:
+            del self.log[: msg.last_index - self.base_index]
+        else:
+            self.log = []
+        self.kv = KVStateMachine()
+        self.kv.restore(msg.store, msg.sessions)
+        self.snapshot = Snapshot(msg.last_index, msg.last_term, dict(msg.store), dict(msg.sessions))
+        self.base_index = msg.last_index
+        self.base_term = msg.last_term
+        self.commit_index = msg.last_index
+        self.last_applied = msg.last_index
+        self.applied = []
+        self.log_version += 1
+        self._record("installsnap", f"n{self.id}|index={msg.last_index}|term={msg.last_term}")
+        self._send(self.id, msg.leader, AppendReply(self.term, self.id, True, msg.last_index))
+
     # -- replication ----------------------------------------------------------
 
     def _send_append_entries(self, peer: int) -> None:
         prev = self.next_index[peer] - 1
+        if prev < self.base_index:
+            self._send_install_snapshot(peer)  # follower is behind our compaction point
+            return
         entries = self.log_suffix(prev + 1)
         self._send(self.id, peer, AppendEntries(
             self.term, self.id, prev, self.term_at(prev), entries, self.commit_index))
+
+    def _send_install_snapshot(self, peer: int) -> None:
+        snap = self.snapshot
+        if snap is None:
+            return
+        self._send(self.id, peer, InstallSnapshot(
+            self.term, self.id, snap.last_index, snap.last_term,
+            dict(snap.store), dict(snap.sessions)))
 
     def _broadcast_heartbeats(self) -> None:
         for p in self.peers:
@@ -457,3 +529,24 @@ class RaftNode:
             self._record("apply", f"n{self.id}|index={self.last_applied}|{command}")
             if self._on_apply is not None:
                 self._on_apply(command, result)
+        self._maybe_compact()
+
+    def _maybe_compact(self) -> None:
+        """Compact the applied prefix into a snapshot once enough entries pile up above the
+        base (section 7). Everything at or below last_applied is committed, so it is safe to
+        fold into the state-machine image and discard from the log; the uncommitted tail is
+        kept. The threshold comes from config (never rng), so snapshotting is deterministic
+        and does not perturb the stream when disabled (threshold 0)."""
+        threshold = self.config.snapshot_threshold
+        if threshold <= 0 or self.last_applied - self.base_index < threshold:
+            return
+        upto = self.last_applied
+        last_term = self.term_at(upto)
+        store, sessions = self.kv.capture()
+        del self.log[: upto - self.base_index]  # drop the compacted prefix
+        self.applied = self.applied[upto - self.base_index:]  # ...and its applied labels
+        self.base_index = upto
+        self.base_term = last_term
+        self.snapshot = Snapshot(upto, last_term, store, sessions)
+        self.log_version += 1
+        self._record("snapshot", f"n{self.id}|index={upto}|term={last_term}")

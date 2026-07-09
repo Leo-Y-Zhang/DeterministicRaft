@@ -11,7 +11,8 @@ from harmonia.node import FOLLOWER, LEADER, Entry
 
 
 class FakeNode:
-    def __init__(self, node_id, role=FOLLOWER, term=1, log=(), commit_index=0, applied=()):
+    def __init__(self, node_id, role=FOLLOWER, term=1, log=(), commit_index=0, applied=(),
+                 base_index=0, base_term=0):
         self.id = node_id
         self.role = role
         self.term = term
@@ -20,10 +21,24 @@ class FakeNode:
         self.applied = list(applied)
         self.log_version = 0
         self.incarnation = 0
+        self.base_index = base_index
+        self.base_term = base_term
 
     def set_log(self, log):
         self.log = [Entry(*e) for e in log]
         self.log_version += 1
+
+    # logical accessors mirroring RaftNode (see harmonia/node.py)
+    def last_log_index(self):
+        return self.base_index + len(self.log)
+
+    def term_at(self, index):
+        if index <= self.base_index:
+            return self.base_term
+        return self.log[index - self.base_index - 1].term
+
+    def entry_at(self, index):
+        return self.log[index - self.base_index - 1]
 
 
 def check(nodes, checker=None, step=1):
