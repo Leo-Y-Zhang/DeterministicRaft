@@ -80,6 +80,38 @@ Each property also has focused unit tests (forced log divergence and repair,
 stale leaders, split votes), plus a bounded liveness check: under
 `none`/`light` faults, submitted commands must commit within a step budget.
 
+## Beyond the log: a client-observable linearizability oracle
+
+The five properties above check what nodes' *logs* do. They cannot see whether
+what *clients* observed is a legal single-copy history. Harmonia's replicated
+state machine is a small key-value store (`put` / `get` / `cas`) with per-client
+exactly-once sessions, and every run records a client history of
+invoke/return/observed operations. `harmonia/linearizability.py` then decides
+whether that history is **linearizable** — whether some total order of the
+operations respects real-time ordering and makes every observed result legal
+(Wing–Gong "linearize and remove", as in Jepsen/Knossos). Raft guarantees it, so
+every `none`/`light`/`chaos` run passes; the oracle catches the client-visible
+bugs — stale reads, acknowledged-but-lost writes, double-applied retries — that
+the internal invariants structurally cannot express.
+
+## Testing the tester: injectable bugs
+
+A verifier is only trustworthy if it catches real defects, so `harmonia/bugs.py`
+carries a registry of deliberately-injectable consensus bugs, **all off by
+default** (an armed-with-`NO_BUGS` run is byte-identical to an un-armed one). Each
+is caught by exactly the property it targets:
+
+| Injected bug | Breaks | Caught by |
+|---|---|---|
+| `drop_commit_term_guard` | §5.4.2 Figure 8 (commit prior-term entries directly) | Leader Completeness / State Machine Safety |
+| `vote_for_stale_candidate` | §5.4.1 election restriction | Leader Completeness |
+| `skip_log_consistency` | §5.3 log matching | Log Matching |
+| `allow_commit_regression` | commit-index monotonicity | Commit Index Monotonic |
+| `stale_local_reads` | reads bypass the log (no leadership check) | **the linearizability oracle only** |
+
+The last one is the point: it slips past every internal invariant and is caught
+only by the client-history oracle. See `tests/test_bugs.py`.
+
 ## Install & run
 
 Requires Python 3.11+. Zero runtime dependencies; dev deps are pytest and mypy.

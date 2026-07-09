@@ -20,6 +20,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
+from .bugs import NO_BUGS, Bugs
 from .kv import Command, KVStateMachine
 
 if TYPE_CHECKING:
@@ -95,6 +96,7 @@ class RaftNode:
         record: Callable[[str, str], None],
         config: RaftConfig = DEFAULT_CONFIG,
         on_apply: Callable[[str, str], None] | None = None,
+        bugs: Bugs = NO_BUGS,
     ) -> None:
         self.id = node_id
         self.peers = sorted(peer_ids)
@@ -102,6 +104,7 @@ class RaftNode:
         self._send = send
         self._record = record
         self._on_apply = on_apply     # (command_str, result) reported as each entry applies
+        self.bugs = bugs              # deliberately-injected defects (default: none)
         self.config = config
         self.cluster_size = len(self.peers) + 1
 
@@ -300,6 +303,8 @@ class RaftNode:
             my_last_term = self.term_at(self.last_log_index())
             up_to_date = (msg.last_log_term, msg.last_log_index) >= (
                 my_last_term, self.last_log_index())
+            if self.bugs.vote_for_stale_candidate:
+                up_to_date = True  # BUG: ignore the 5.4.1 log-freshness restriction
             if up_to_date:
                 granted = True
                 self.voted_for = msg.candidate
@@ -331,10 +336,12 @@ class RaftNode:
         self._arm_election_timer()
 
         # Consistency check: our log must contain an entry at prev_index whose
-        # term matches prev_term (Log Matching, section 5.3).
+        # term matches prev_term (Log Matching, section 5.3). The BUG ignores the
+        # term mismatch (but still guards the index bound to avoid a gap/crash).
+        too_short = self.last_log_index() < msg.prev_index
+        term_mismatch = not too_short and self.term_at(msg.prev_index) != msg.prev_term
         if msg.prev_index > 0 and (
-            self.last_log_index() < msg.prev_index
-            or self.term_at(msg.prev_index) != msg.prev_term
+            too_short or (term_mismatch and not self.bugs.skip_log_consistency)
         ):
             self._send(self.id, msg.leader, AppendReply(self.term, self.id, False, 0))
             return
@@ -356,8 +363,11 @@ class RaftNode:
         match = msg.prev_index + len(msg.entries)
 
         # Advance commit index; the max() guards against a stale, reordered
-        # AppendEntries lowering it.
-        if msg.leader_commit > self.commit_index:
+        # AppendEntries lowering it. The BUG drops that guard, so a reordered message
+        # with a smaller leader_commit lowers commit_index (CommitIndexMonotonic).
+        if self.bugs.allow_commit_regression:
+            self.commit_index = min(msg.leader_commit, match)
+        elif msg.leader_commit > self.commit_index:
             self._set_commit_index(max(self.commit_index, min(msg.leader_commit, match)))
         self._send(self.id, msg.leader, AppendReply(self.term, self.id, True, match))
 
@@ -396,7 +406,7 @@ class RaftNode:
         a majority, but only if log[N].term == currentTerm. Entries from earlier
         terms commit indirectly, never by counting replicas."""
         for n in range(self.last_log_index(), self.commit_index, -1):
-            if self.term_at(n) != self.term:
+            if self.term_at(n) != self.term and not self.bugs.drop_commit_term_guard:
                 break  # older-term entries below: the guard forbids direct commit
             votes = sum(1 for m in self.match_index.values() if m >= n)
             if votes * 2 > self.cluster_size:
