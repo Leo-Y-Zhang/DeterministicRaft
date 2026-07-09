@@ -11,7 +11,9 @@ snapshots/log compaction, persistence to disk. A "crash" in the simulator pauses
 a node with its state intact, which is equivalent to synchronous persistence of
 currentTerm/votedFor/log.
 
-Log indices are 1-based, exactly as in the paper. Index i lives at self.log[i-1].
+Log indices are 1-based, exactly as in the paper. With no snapshot the entry at logical
+index i lives at self.log[i-1]; once a prefix is compacted (base_index > 0) all indexing
+goes through the log helpers, which hide the physical offset.
 """
 
 from __future__ import annotations
@@ -108,11 +110,16 @@ class RaftNode:
         self.config = config
         self.cluster_size = len(self.peers) + 1
 
-        # Persistent state (Figure 2). We keep it in memory: simulator "crashes"
-        # pause the node with state intact, equivalent to synchronous persistence.
+        # Persistent state (Figure 2), rebuilt from stable storage after a crash.
         self.term: int = 0
         self.voted_for: int | None = None
         self.log: list[Entry] = []
+        # Log compaction boundary: `log` holds entries at 1-based logical indices
+        # (base_index+1 .. base_index+len). base_index==0 means no snapshot yet; a snapshot
+        # (added later) advances it and discards the prefix. All indexing goes through the
+        # helpers below so the rest of the algorithm never sees the physical offset.
+        self.base_index: int = 0
+        self.base_term: int = 0
 
         # Volatile state.
         self.role: str = FOLLOWER
@@ -135,19 +142,28 @@ class RaftNode:
 
         self._timer_seq: int = 0              # invalidates stale timer callbacks
 
-    # -- log helpers ----------------------------------------------------------
+    # -- log helpers (all indexing is logical; base_index hides log compaction) -----
 
     def last_log_index(self) -> int:
-        return len(self.log)
+        return self.base_index + len(self.log)
+
+    def _phys(self, index: int) -> int:
+        """Physical offset into self.log for a 1-based logical index above the base."""
+        return index - self.base_index - 1
 
     def term_at(self, index: int) -> int:
-        """Term of the entry at 1-based `index`; 0 for the empty prefix (index 0)."""
-        if index == 0:
-            return 0
-        return self.log[index - 1].term
+        """Term of the entry at 1-based logical `index`; the base term for anything at or
+        below the compaction boundary (index 0 with no snapshot => term 0)."""
+        if index <= self.base_index:
+            return self.base_term
+        return self.log[self._phys(index)].term
 
     def entry_at(self, index: int) -> Entry:
-        return self.log[index - 1]
+        return self.log[self._phys(index)]
+
+    def log_suffix(self, from_index: int) -> tuple[Entry, ...]:
+        """Entries at logical `from_index` and above (for replication)."""
+        return tuple(self.log[self._phys(from_index):])
 
     # -- lifecycle ------------------------------------------------------------
 
@@ -369,7 +385,7 @@ class RaftNode:
             index += 1
             if self.last_log_index() >= index:
                 if self.term_at(index) != entry.term:
-                    del self.log[index - 1:]
+                    del self.log[self._phys(index):]
                     self.log_version += 1
                 else:
                     continue
@@ -408,7 +424,7 @@ class RaftNode:
 
     def _send_append_entries(self, peer: int) -> None:
         prev = self.next_index[peer] - 1
-        entries = tuple(self.log[prev:])
+        entries = self.log_suffix(prev + 1)
         self._send(self.id, peer, AppendEntries(
             self.term, self.id, prev, self.term_at(prev), entries, self.commit_index))
 

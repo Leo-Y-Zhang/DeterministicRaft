@@ -70,7 +70,12 @@ byte-identical replay from a seed — guarded by a golden-digest tripwire from S
       commits prior-term by count; stale-read nonlinearizable@0). Chaos goldens rebaselined
       (crashes reset volatile); none/light unchanged. 262 -> 268 tests; 100-seed sweep 0
       violations.
-- [ ] Step 7 — Log base-offset abstraction (digest-neutral; snapshot prereq)
+- [x] Step 7 — Log base-offset abstraction. node.py log indexing routes through helpers
+      carrying `base_index`/`base_term` (`last_log_index`/`term_at`/`entry_at`/`_phys`/
+      `log_suffix`); `_send_append_entries` + truncation use them. Ships base_index==0 ->
+      digests UNCHANGED (the refactor's correctness oracle). Property test: helpers == raw
+      1-based indexing across random logs. 268 -> 271 tests. (Checker still reads raw logs;
+      its generalization is Step 8's same-commit job.)
 - [ ] Step 8 — Snapshots + InstallSnapshot + generalized checker (same commit)
 - [ ] Step 9 — Capstone: ReadIndex reads (preferred) OR single-server membership
 - [ ] Step 10 — Showcase HTML report + README + adversarial review + merge + tag v1.0.0
@@ -79,24 +84,29 @@ byte-identical replay from a seed — guarded by a golden-digest tripwire from S
 bonuses — safe to merge after any completed step if time runs out.
 
 ## Exact next step
-Step 7 — Log base-offset abstraction (determinism-NEUTRAL refactor; HARD prereq for
-snapshots). Replace raw 1-based `log[index-1]` indexing with helpers carrying a
-`base_index` (== 0 today, so behaviour + digests UNCHANGED). In node.py route
-`term_at`/`entry_at`/`last_log_index`/log slicing + `_advance_commit`/`_send_append_entries`
-through helpers that treat the log as `[base_index+1 .. base_index+len(log)]`; in
-invariants.py route the direct `log[idx-1]` reads (`_observe_commits`,
-`_check_leader_completeness`, `_check_log_matching`, `_check_leader_append_only`) through
-the same abstraction, extending the `NodeView` Protocol with the base-offset accessors.
-Ship with base_index==0 so ZERO digests move (that is the exact oracle for this refactor —
-run the golden test; it must be untouched). Tests: all existing pass unchanged;
-golden-digests-unchanged; a property test that `term_at(i)` at base=0 equals the old
-behaviour across random logs; ruff+mypy--strict clean. Guardrail: BASE-OFFSET BEFORE
-SNAPSHOTS — no snapshot code touches raw indexing until this lands proven digest-neutral.
+Step 8 — Snapshots / log compaction + InstallSnapshot RPC, WITH the generalized checker IN
+THE SAME COMMIT (HIGHEST RISK). Behind a config flag (own golden matrix so default digests
+stay pinned). (a) Compaction: when a node's committed prefix exceeds a threshold, discard
+it into a snapshot = (last_included_index, last_included_term, kv store copy, session
+table copy); advance base_index/base_term; keep the uncommitted tail. (b) InstallSnapshot:
+a leader whose nextIndex[follower] <= base_index sends its snapshot; the follower installs
+it (replaces state machine + log prefix, sets base_index/base_term), then resumes normal
+AppendEntries. (c) Generalize the InvariantChecker IN THE SAME COMMIT: NodeView gains
+base_index/base_term; Log Matching + Leader Completeness must treat the compacted prefix as
+trusted-committed and compare over the reconstructed logical log (a node that compacted a
+prefix another still holds raw must NOT false-positive, but a real cross-boundary divergence
+must still be CAUGHT — add a planted-bug fake-node test). Determinism: snapshot threshold
+from config not RNG; new InstallSnapshot draws APPENDED; own golden matrix. Timeline gets a
+snapshot mark. Tests: term_at/entry_at correct across the boundary; follower below the
+snapshot converges via InstallSnapshot; chaos+snapshot sweep keeps all 5 invariants AND
+linearizability; compaction never drops the uncommitted tail; determinism-with-snapshots
+golden matrix. Guardrails: BASE-OFFSET (Step 7) done; CHECKER GENERALIZED IN LOCKSTEP;
+INJECTABLE-off-by-default style (snapshots behind a flag, default OFF -> existing goldens
+untouched).
 
-NOTE: Steps 7-9 are independently-shippable; safe to merge to main + tag after any
-completed step. Step 8 (snapshots + InstallSnapshot + generalized checker IN THE SAME
-COMMIT) is the HIGHEST-RISK step. Step 10 = showcase HTML report + README overhaul +
-adversarial 3-lens review + merge --no-ff main + tag v1.0.0.
+NOTE: Steps 8-9 are independently-shippable; safe to merge to main + tag after any. Step 9
+= ReadIndex reads OR single-server membership. Step 10 = showcase HTML report + README
+overhaul + adversarial 3-lens review + merge --no-ff main + tag v1.0.0.
 Two ordered sub-parts. (5a) Lift the fault-driver decisions into an explicit, replayable
 `Schedule` object: a deterministic suppression MASK threaded through `_fault_tick` (each
 fault decision gets an index; a mask can suppress specific ones) — still rng-fed by
