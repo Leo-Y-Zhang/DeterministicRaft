@@ -1,30 +1,34 @@
 PROPRIETARY SOURCE-AVAILABLE LICENCE
 Portfolio viewing only — no reuse rights granted
 
-Copyright (c) 2026 GreenPandaTech. All rights reserved.
+Copyright (c) 2026 Leo Zhang. All rights reserved.
 
 ================================================================================
-1. AUTHORSHIP AND RESERVED IDENTITY
+1. AUTHORSHIP AND OWNERSHIP
 ================================================================================
 
-"GreenPandaTech" is a pseudonym of a single individual author (the "Author"),
-who is the sole owner of all copyright and other intellectual property rights in
-this software and its accompanying documentation (the "Work").
+Leo Zhang (the "Author") is the sole author of this software and its
+accompanying documentation (the "Work"), and the sole owner of all copyright and
+other intellectual property rights in it.
 
-Publication under a pseudonym does NOT transfer, waive, dedicate to the public,
-or otherwise diminish any right of the Author. The Author expressly reserves the
-right, at any time and at their sole discretion, to:
+Where the Work has been or is published under a project name, handle, or
+pseudonym, that does not transfer, waive, dedicate to the public, or otherwise
+diminish any right of the Author. The Author expressly reserves the right, at any
+time, to:
 
-  (a) publicly identify themselves as the author of the Work, by legal name or
-      otherwise, and to assert authorship of it retrospectively;
-  (b) require that any third-party reference to the Work attribute it to that
-      identity once disclosed;
+  (a) assert authorship of the Work, including retrospectively;
+  (b) require that any third-party reference to the Work attribute it to the
+      Author;
   (c) re-license the Work, in whole or in part, under any other terms; and
   (d) transfer or assign ownership of the Work.
 
 Nothing in this licence, and no lapse of time, shall be construed as abandonment
 of copyright or of the Author's moral right to be identified as the author of the
 Work.
+
+This notice records authorship only. It is not an invitation to contact the
+Author by any channel other than the one in section 10.5, and it identifies no
+account, address, employer, institution, or service.
 
 ================================================================================
 2. LIMITED PERMISSION GRANTED
@@ -66,10 +70,9 @@ without the Author's prior written permission:
 4. PLATFORM FORKS
 ================================================================================
 
-The Work may be hosted on a platform (such as GitHub) whose terms of service
-require that publicly readable repositories permit forking. Where such a fork is
-technically possible, it is tolerated ONLY to the minimum extent that platform's
-terms compel, and:
+The Work may be hosted on a platform whose terms of service require that
+publicly readable repositories permit forking. Where such a fork is technically
+possible, it is tolerated ONLY to the minimum extent those terms compel, and:
 
   * it grants the forking party no right whatsoever under sections 2 or 3;
   * the restrictions in section 3 continue to apply in full to the fork and to
@@ -93,9 +96,10 @@ accordingly, and remains fully effective in all other respects.
 6. NO TRADEMARK OR ENDORSEMENT
 ================================================================================
 
-This licence grants no right to use the name "GreenPandaTech", the name of the
-Work, or any related name, logo, or mark, whether for attribution, endorsement,
-or any other purpose, beyond factual reference to the Work itself.
+This licence grants no right to use the name of the Work, the Author's name, or
+any related name, logo, or mark, whether for attribution of your own work,
+endorsement, or any other purpose, beyond factual reference to the Work and its
+authorship.
 
 ================================================================================
 7. NO WARRANTY
@@ -146,5 +150,6 @@ Work and destroy any copies in your possession or control.
      platform-inferred licence label.
 
 10.5 Permissions. Requests for any right beyond section 2 — including reuse,
-     collaboration, or commercial licensing — should be directed to the Author
-     through the hosting platform account under which the Work is published.
+     collaboration, or commercial licensing — should be made through the hosting
+     platform account under which the Work is published. No other contact
+     channel is offered or implied.
