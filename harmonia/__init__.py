@@ -1,3 +1,3 @@
 """Harmonia: an educational Raft implementation verified by deterministic simulation testing."""
 
-__version__ = "1.0.0"
+__version__ = "1.1.0"

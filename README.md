@@ -76,6 +76,11 @@ every simulator step by `InvariantChecker`:
 | Leader Completeness — committed entries survive into future leaders' logs | `_check_leader_completeness` |
 | State Machine Safety — no two nodes apply different commands at an index | `_check_state_machine_safety` |
 
+Beyond the paper's five, the checker also enforces commit-index monotonicity
+per node and — since membership changes made majorities per-node state — a
+per-configuration commit quorum: a newly committed entry must actually be held
+by a majority of the committing node's *current* configuration.
+
 Each property also has focused unit tests (forced log divergence and repair,
 stale leaders, split votes), plus a bounded liveness check: under
 `none`/`light` faults, submitted commands must commit within a step budget.
@@ -108,9 +113,38 @@ is caught by exactly the property it targets:
 | `skip_log_consistency` | §5.3 log matching | Log Matching |
 | `allow_commit_regression` | commit-index monotonicity | Commit Index Monotonic |
 | `stale_local_reads` | reads bypass the log (no leadership check) | **the linearizability oracle only** |
+| `drop_config_commit_guard` | the **real May-2015 membership bug** (see below) | Leader Completeness |
 
-The last one is the point: it slips past every internal invariant and is caught
-only by the client-history oracle. See `tests/test_bugs.py`.
+`stale_local_reads` is the oracle's reason to exist: it slips past every internal
+invariant and is caught only by the client-history oracle. See `tests/test_bugs.py`.
+
+### The historical one: the 2015 single-server membership bug
+
+The sixth bug is not invented. The single-server membership algorithm *as published
+in the Raft dissertation* let a freshly elected leader append a configuration change
+before committing anything in its own term. Diego Ongaro corrected it on the raft-dev
+mailing list in May 2015: two leaders elected under the same base configuration can
+each install a different single-server change whose majorities do **not** overlap,
+and one of them then overwrites the other's *committed* entries.
+`drop_config_commit_guard` resurrects the algorithm exactly as it stood 2014-2015,
+and Harmonia catches the loss both ways:
+
+- **Mechanism, replayed exactly** (`tests/test_membership.py`): universe `{0..4}`,
+  voters `{0,1,2,3}`. `n0` (leader, term 1) starts adding `n4`; concurrently `n1`
+  (leader, term 2) removes `n0` and commits entries with the two-server majority
+  `{1,2}` of its shrunken configuration; `n0` is then re-elected with `{0,3,4}` — a
+  majority of *its* five-server configuration, disjoint from `{1,2}` — and overwrites
+  the committed entries. Leader Completeness fires the moment the stale leader
+  returns. The guarded twin of the test shows the amendment refusing both unguarded
+  appends — and the very commit that satisfies the guard also blocks the disjoint
+  election.
+- **In the wild + shrunk** (`tests/test_membership.py`, `tests/test_shrink.py`): a
+  1000-seed hunt found the same loss in ordinary membership churn at six servers,
+  chaos seed 354 (pinned); ddmin then reduces it to a 1-minimal, step-trimmed,
+  byte-identically replayable counterexample. A five-server control sweep stays clean
+  even with the guard dropped — every reachable pair of configurations there has
+  overlapping majorities (3+3 > 5), so the bug *needs* the sixth server. That rarity
+  is the story: the bug survived public review for about a year.
 
 ## Shrinking a failure to a minimal counterexample
 
@@ -144,6 +178,19 @@ a config flag and each with its own determinism-pinned golden matrix:
   heartbeat acks in its term) *and* has committed an entry in its own term. The
   linearizability oracle earned its keep here — it caught stale reads while that
   second condition was missing.
+- **Single-server membership changes (dissertation ch. 4).** A configuration entry in
+  the log names the voting set and takes effect the moment it is *appended*
+  (pre-commit); elections, commits and ReadIndex confirmations all count majorities
+  over the current configuration, and the invariant checker judges commit quorums
+  per-configuration (again generalized in lockstep, with planted-bug tests). Two
+  guards make effective-on-append safe: one change in flight at a time, and — the
+  May-2015 amendment — no change until the leader has committed an entry in its own
+  term. Membership is derived state: it survives crash-restart, log truncation,
+  compaction into a snapshot and `InstallSnapshot`, always rebuilt from the
+  log/snapshot. `Cluster(membership=True)` (CLI: `--membership`) starts one server
+  outside the configuration and runs a deterministic, zero-randomness churn driver
+  that adds and removes one server at a time — proposing to *every* node that
+  believes it is leader, so a partitioned stale leader keeps pushing its own change.
 
 ## Install & run
 
@@ -154,12 +201,13 @@ python -m venv .venv
 .venv/Scripts/python.exe -m pip install -e ".[dev]"   # Windows
 # .venv/bin/python -m pip install -e ".[dev]"          # Linux/macOS
 
-python -m pytest -q            # 340+ tests (a longer sweep is marked slow)
+python -m pytest -q            # 407 tests (a longer sweep is marked slow)
 python -m mypy harmonia         # clean (strict)
 python -m ruff check .          # clean
 
 harmonia run    --nodes 5 --seed 42 --faults chaos --steps 20000 --timeline out.svg
 harmonia check  --seeds 300 --faults chaos
+harmonia check  --seeds 100 --faults chaos --membership   # + single-server churn
 harmonia replay --seed 42       # identical to run: byte-for-byte event trace
 harmonia report --seed 42 --faults chaos --out report.html   # self-contained HTML
 ```
@@ -181,20 +229,23 @@ harmonia/
   sim.py              discrete-event core: virtual clock, event queue, seeded RNG,
                       network faults (drop/duplicate/delay/reorder/partition)
   node.py             the Raft state machine: election, replication, commit rules,
-                      log repair, crash-restart, snapshots/InstallSnapshot, ReadIndex
+                      log repair, crash-restart, snapshots/InstallSnapshot, ReadIndex,
+                      single-server membership changes
   kv.py               the replicated key-value state machine, structured commands,
                       per-client sessions, snapshots, client-op history
   invariants.py       the five safety properties, evaluated after every step
-                      (crash- and snapshot-aware)
+                      (crash-, snapshot- and configuration-aware)
   linearizability.py  the client-history oracle (Wing-Gong linearize-and-remove)
   bugs.py             injectable consensus bugs (all off by default)
   shrink.py           ddmin schedule shrinker -> minimal counterexample
-  cluster.py          wires N nodes to the simulated network; client + fault drivers
+  cluster.py          wires N nodes to the simulated network; client + fault +
+                      membership-churn drivers
   timeline.py         SVG timeline renderer (no dependencies)
   report.py           self-contained HTML run report
   cli.py              run / check / replay / report
-tests/                340+ tests: unit, scenario, invariant sweeps, oracle, shrinker,
-                      crash-restart, snapshots, ReadIndex, determinism goldens
+tests/                407 tests: unit, scenario, invariant sweeps, oracle, shrinker,
+                      crash-restart, snapshots, ReadIndex, membership, determinism
+                      goldens
 ```
 
 Design rule: `node.py` contains *only* the algorithm — no I/O, no clocks, no
@@ -208,9 +259,14 @@ Deliberately honest about the edges:
   `get` / `cas`). The oracle's search is bounded (concurrency width and a
   states-explored budget); it is a sound *detector* of non-linearizable histories
   for the workloads here, not a general model checker.
-- **No cluster membership changes** (single fixed configuration). Snapshots,
-  crash-restart and ReadIndex reads *are* implemented; single-server membership is
-  the one remaining major Raft extension left out.
+- **Membership changes are single-server only** (add or remove ONE server at a
+  time, per dissertation ch. 4) — the full joint-consensus C-old,new protocol is
+  deliberately out (single-server teaches the same quorum-overlap lesson with far
+  less determinism surface). Simplifications on top: a leader refuses to remove
+  itself; a new server is added without the ch. 4.2.1 catch-up phase (it converges
+  via ordinary log repair or `InstallSnapshot` after joining); and there is no
+  pre-vote/leadership-transfer mitigation, so a removed server that never learned of
+  its removal can still disrupt liveness with elections (safety is unaffected).
 - **No real disk I/O**: "stable storage" is modelled in memory (a crash clears
   volatile state and a restart rebuilds from the persisted log/snapshot). Real
   files would inject OS-level nondeterminism for no correctness gain.
@@ -225,9 +281,9 @@ of FoundationDB, TigerBeetle and Jepsen (no affiliation).
 
 ## Roadmap
 
-- Single-server cluster membership changes, with the checker extended to per-config
-  majorities.
 - A nemesis vocabulary for hand-authored fault scenarios.
+- Joint-consensus membership (C-old,new) if a second quorum lesson ever earns its
+  determinism cost.
 
 ## License
 

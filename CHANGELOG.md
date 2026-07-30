@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.1.0 - 2026-07-30
+
+Single-server cluster membership changes (Ongaro dissertation ch. 4), plus the real
+May-2015 membership bug as the sixth injectable.
+
+- **Single-server membership changes**: a configuration entry takes effect the moment
+  it is appended (pre-commit); elections, commits and ReadIndex confirmations count
+  majorities over the current configuration. Two leader guards make that safe: one
+  change in flight at a time, and no change before a current-term commit (the
+  May-2015 raft-dev amendment). Membership is derived state - rebuilt from the
+  log/snapshot across crash-restart, truncation, compaction and `InstallSnapshot`
+  (whose wire format now carries the configuration at the snapshot index; the
+  snapshot golden matrix was rebaselined once for it).
+- **Membership mode** behind `Cluster(membership=True)` / CLI `--membership` (all
+  four commands): starts one server outside the configuration and runs a
+  deterministic, zero-randomness churn driver that proposes single-server changes to
+  every node that believes it is leader. Own golden-digest matrix; default goldens
+  byte-identical (asserted).
+- **Checker generalized in lockstep** (same commit as the feature): per-configuration
+  majorities plus a new machine-checked property, CommitQuorum - a newly committed
+  entry must be held by a majority of the committing node's current configuration.
+  Planted-bug FakeNode tests prove catch and no-false-positive.
+- **The historical injectable** (`drop_config_commit_guard`): resurrects the
+  dissertation-published algorithm (no current-term-commit guard). A hand-driven test
+  replays Ongaro's raft-dev example exactly (disjoint majorities, committed entries
+  overwritten, Leader Completeness fires); a pinned natural repro (6 servers, chaos
+  seed 354) trips it in ordinary churn and ddmin shrinks it to a 1-minimal
+  counterexample; a 5-server control sweep shows the bug needs the sixth server.
+- Test-count corrections: 1.0.0 shipped 343 tests (not the 342 stated below);
+  now 343 -> 407 tests plus the marked slow sweep.
+
 ## 1.0.0 - 2026-07-09
 
 From an internal-invariant Raft simulator to a Jepsen-grade, self-minimizing DST
