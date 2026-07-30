@@ -23,7 +23,10 @@ from .sim import PROFILES, FaultProfile, Network, Simulator
 
 CLIENT_INTERVAL = 100      # ms between client command attempts
 FAULT_INTERVAL = 100       # ms between fault-driver decisions
-MEMBERSHIP_INTERVAL = 300  # ms between membership-change attempts (membership mode)
+MEMBERSHIP_INTERVAL = 100  # ms between membership-change attempts (membership mode); as
+#                            fast as the client driver, so a fresh leader sees a change
+#                            proposal while its current-term commit may still be pending
+#                            (the window the May-2015 guard exists to make safe)
 
 # Deterministic client workload: a few clients hammering a small keyspace so operations
 # contend on the same keys (which is what makes linearizability interesting to check).
@@ -281,11 +284,13 @@ class Cluster:
         """Deterministic membership churn: add the lowest server missing from the current
         configuration back in, otherwise remove the next server in rotation (never the
         leader -- a leader refuses to remove itself). Purely counter-driven, so it draws
-        NO randomness; the change is submitted to whichever node currently leads, and the
-        leader's own guards decide whether it is accepted now or retried next tick."""
-        leader = self.leader()
-        if leader is not None:
-            universe = sorted(self.nodes)
+        NO randomness. The proposal is submitted to EVERY node that currently believes it
+        is leader (sorted, so iteration is deterministic), each judged against that
+        leader's OWN configuration -- a partitioned stale leader keeps pushing its own
+        change, which is exactly the concurrency the single-server guards must survive.
+        Each leader's guards decide whether its change is accepted now or retried."""
+        universe = sorted(self.nodes)
+        for leader in self.leaders():
             missing = [i for i in universe if i not in leader.voters]
             if missing:
                 proposal = tuple(sorted([*leader.voters, missing[0]]))

@@ -312,9 +312,9 @@ class TestMembershipEndToEnd:
 
 # Membership-enabled configs: own pinned golden matrix (default digests stay untouched).
 MEMBERSHIP_GOLDENS = {
-    (5, 1, "chaos", 4000): "1a29274bb2bc226ee59919df2685a151b3e1077f0aba3f2e6f15371e2279acb4",
-    (3, 4, "light", 3000): "1528302f34bcc42d71e40a5fbe729f592c8aec5c400563b3308cd1afebbf80c5",
-    (5, 9, "chaos", 5000): "76453a95b2496e58fb83e3b19609634e8f6d4e6a837189b418e7c7fd1ff0d270",
+    (5, 1, "chaos", 4000): "e2a45649bd89ee47d04a45a0a756ce1dadf01efdd43ee1e99e42730a912f6761",
+    (3, 4, "light", 3000): "6fb6d3d36b1df0c4505dc3a519bd72d772a3229411cc69b164b0a016a56c2678",
+    (5, 9, "chaos", 5000): "9cbe63cccdff94fbd7c4b7104acb3a9e21d964a5d0ae3e6151e2bb8dcf33882e",
 }
 
 
