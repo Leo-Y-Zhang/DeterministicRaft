@@ -141,12 +141,16 @@ class KVStateMachine:
 @dataclass
 class Snapshot:
     """A compacted state-machine image: everything committed at or below ``last_index``.
-    Persistent (survives a crash) so the discarded log prefix can always be recovered."""
+    Persistent (survives a crash) so the discarded log prefix can always be recovered.
+    ``voters`` is the cluster configuration in force at ``last_index`` -- a configuration
+    entry folded into the snapshot must survive compaction and restart like any other
+    committed state."""
 
     last_index: int
     last_term: int
     store: dict[str, str]
     sessions: dict[int, tuple[int, str]]
+    voters: tuple[int, ...]
 
 
 @dataclass

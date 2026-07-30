@@ -12,7 +12,7 @@ from harmonia.node import FOLLOWER, LEADER, Entry
 
 class FakeNode:
     def __init__(self, node_id, role=FOLLOWER, term=1, log=(), commit_index=0, applied=(),
-                 base_index=0, base_term=0):
+                 base_index=0, base_term=0, voters=None):
         self.id = node_id
         self.role = role
         self.term = term
@@ -23,6 +23,9 @@ class FakeNode:
         self.incarnation = 0
         self.base_index = base_index
         self.base_term = base_term
+        # default: a single-server configuration, so the per-configuration commit-quorum
+        # check is trivially satisfied unless a test sets voters explicitly
+        self.voters = tuple(voters) if voters is not None else (node_id,)
 
     def set_log(self, log):
         self.log = [Entry(*e) for e in log]
