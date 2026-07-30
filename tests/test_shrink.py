@@ -94,6 +94,17 @@ class TestShrinkHealthy:
     def test_healthy_scenario_yields_no_counterexample(self):
         assert shrink(Scenario(nodes=5, seed=1, faults="chaos", steps=4000)) is None
 
+    def test_healthy_membership_scenario_yields_no_counterexample(self):
+        # membership threads through the shrinker's per-candidate replays
+        assert shrink(Scenario(nodes=5, seed=1, faults="chaos", steps=4000,
+                               membership=True)) is None
+
+    def test_membership_scenario_replay_command_carries_the_flag(self):
+        sc = Scenario(nodes=5, seed=3, faults="chaos", steps=2000, membership=True)
+        assert sc.replay_command().endswith("--membership")
+        plain = Scenario(nodes=5, seed=3, faults="chaos", steps=2000)
+        assert "--membership" not in plain.replay_command()
+
     def test_target_mismatch_yields_none(self):
         # a real failure, but asked to shrink a DIFFERENT target
         assert shrink(BUG_SCENARIO, target="LogMatching") is None

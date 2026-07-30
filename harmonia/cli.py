@@ -5,6 +5,8 @@ Commands:
   harmonia check  --seeds 300 --faults chaos [--nodes 5 --steps 5000]
   harmonia replay --seed N [--nodes 5 --faults chaos --steps 20000]
 
+All four commands also take --membership (single-server membership churn mode).
+
 Exit codes:
   0  success (run clean / all invariants held / replay identical)
   1  an invariant violation was detected (the message contains the replay command)
@@ -29,8 +31,9 @@ EXIT_VIOLATION = 1
 EXIT_USAGE = 2
 
 
-def _execute(nodes: int, seed: int, faults: str, steps: int) -> RunResult:
-    return Cluster(num_nodes=nodes, seed=seed, faults=faults).run(steps)
+def _execute(nodes: int, seed: int, faults: str, steps: int,
+             membership: bool = False) -> RunResult:
+    return Cluster(num_nodes=nodes, seed=seed, faults=faults, membership=membership).run(steps)
 
 
 def _print_result(result: RunResult) -> None:
@@ -42,7 +45,8 @@ def _print_result(result: RunResult) -> None:
     print(f"faults: partitions={s['partitions']} heals={s['heals']} "
           f"crashes={s['crashes']} resumes={s['resumes']}")
     committed = max((n["commit_index"] for n in result.final), default=0)
-    print(f"commands: submitted={s['commands_submitted']} committed={committed}")
+    print(f"commands: submitted={s['commands_submitted']} committed={committed} "
+          f"config_changes={s['config_changes']}")
     print(f"invariants: OK ({s['invariant_checks']} checks, one after every step)")
     print(f"trace digest: sha256:{result.digest}")
     print("final logs:")
@@ -57,7 +61,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     print(f"harmonia run: nodes={args.nodes} seed={args.seed} "
           f"faults={args.faults} steps={args.steps}")
     try:
-        result = _execute(args.nodes, args.seed, args.faults, args.steps)
+        result = _execute(args.nodes, args.seed, args.faults, args.steps, args.membership)
     except InvariantViolation as violation:
         print(f"INVARIANT VIOLATION: {violation}")
         return EXIT_VIOLATION
@@ -79,7 +83,7 @@ def cmd_check(args: argparse.Namespace) -> int:
     checks = 0
     for seed in range(args.seeds):
         try:
-            result = _execute(args.nodes, seed, args.faults, args.steps)
+            result = _execute(args.nodes, seed, args.faults, args.steps, args.membership)
             checks += result.stats["invariant_checks"]
         except InvariantViolation as violation:
             violations.append(violation)
@@ -100,7 +104,8 @@ def cmd_replay(args: argparse.Namespace) -> int:
     outcomes = []
     for attempt in (1, 2):
         try:
-            outcomes.append(_execute(args.nodes, args.seed, args.faults, args.steps))
+            outcomes.append(_execute(args.nodes, args.seed, args.faults, args.steps,
+                                     args.membership))
         except InvariantViolation as violation:
             print(f"attempt {attempt}: INVARIANT VIOLATION: {violation}")
             return EXIT_VIOLATION
@@ -120,7 +125,8 @@ def cmd_report(args: argparse.Namespace) -> int:
     """Run once and write a self-contained HTML report (summary + timeline + verdict)."""
     print(f"harmonia report: nodes={args.nodes} seed={args.seed} "
           f"faults={args.faults} steps={args.steps}")
-    cluster = Cluster(num_nodes=args.nodes, seed=args.seed, faults=args.faults)
+    cluster = Cluster(num_nodes=args.nodes, seed=args.seed, faults=args.faults,
+                      membership=args.membership)
     try:
         result = cluster.run(args.steps)
     except InvariantViolation as violation:
@@ -152,6 +158,9 @@ def build_parser() -> argparse.ArgumentParser:
                        help="fault profile (default none)")
         p.add_argument("--steps", type=int, default=steps_default,
                        help=f"simulator steps (default {steps_default})")
+        p.add_argument("--membership", action="store_true",
+                       help="membership mode: start with one server outside the "
+                            "configuration and run deterministic single-server churn")
 
     p_run = sub.add_parser("run", help="run one seeded simulation and print a digest")
     p_run.add_argument("--seed", type=int, default=0)

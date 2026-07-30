@@ -52,6 +52,22 @@ class TestRun:
         assert digest == [line for line in second.splitlines() if "trace digest" in line]
 
 
+class TestMembershipFlag:
+    def test_run_membership_exits_zero_and_reconfigures(self, capsys):
+        assert main(["run", "--nodes", "5", "--seed", "1", "--faults", "none",
+                     "--steps", "6000", "--membership"]) == EXIT_OK
+        out = capsys.readouterr().out
+        assert "config_changes=" in out
+        changes = int(out.split("config_changes=")[1].split()[0])
+        assert changes > 0
+
+    def test_replay_membership_is_byte_identical(self, capsys):
+        assert main(["replay", "--seed", "9", "--faults", "chaos",
+                     "--steps", "3000", "--membership"]) == EXIT_OK
+        out = capsys.readouterr().out
+        assert "replay verified" in out and "byte-identical" in out
+
+
 class TestCheck:
     def test_check_reports_zero_violations(self, capsys):
         assert main(["check", "--seeds", "5", "--faults", "chaos",
