@@ -1,4 +1,9 @@
-# Session handoff — Harmonia "to the max" (targeting v1.0.0)
+# Session handoff — Harmonia (v1.1.0 SHIPPED: single-server membership)
+
+**STATUS: v1.1.0 complete on `main` — single-server membership changes (dissertation
+ch. 4) + the real May-2015 membership bug as the sixth injectable. 407 tests (+1 slow),
+ruff + mypy --strict clean, replay byte-identical, 100-seed chaos sweep clean. Nothing
+pending.** History below records the v1.0.0 "to the max" program.
 
 Program: repo max-upgrades #4 (after Hephaestus, Helios, Daedalus). Spec:
 `docs/superpowers/specs/to-the-max.md` (self-approved). Branch: `feature/to-the-max`.
@@ -101,59 +106,30 @@ byte-identical replay from a seed — guarded by a golden-digest tripwire from S
       log_suffix); final gates green (343 tests + slow, ruff, mypy --strict, replay
       byte-identical, 100-seed sweep 0 violations). Merged --no-ff to main + tagged v1.0.0.
 
-## STATUS: COMPLETE. Harmonia to-the-max v1.0.0 shipped (all 11 steps 0-10). 151 -> 343
-tests. Next repo in the max-upgrades program (#5): Talos (see [[project_repo_max_upgrades]]).
+## STATUS: v1.0.0 shipped (all 11 steps 0-10, 151 -> 343 tests), then the v1.1.0
+membership round (below). Next repo in the max-upgrades program (#5): Talos (renamed
+Themis; see [[project_repo_max_upgrades]]).
 
-**Portfolio-complete by Step 5.** Steps 6–9 are ordered, independently-shippable
-bonuses — safe to merge after any completed step if time runs out.
+## v1.1.0 round (2026-07-30) — single-server membership, COMPLETE
+- Membership changes per dissertation ch. 4: config entries effective on APPEND
+  (pre-commit); per-configuration majorities everywhere (elections, commits, ReadIndex);
+  guards = one-in-flight + current-term-commit (the May-2015 amendment). Derived state:
+  rebuilt from log/snapshot on restart/truncation/InstallSnapshot (whose wire format now
+  carries voters -> snapshot goldens rebaselined once).
+- `Cluster(membership=True)` / CLI `--membership`: one spare server + deterministic
+  zero-rng churn driver proposing to EVERY believed leader at the client tick rate; own
+  golden matrix; default goldens byte-identical (asserted).
+- Checker generalized SAME COMMIT: per-config majorities + new CommitQuorum property;
+  planted-bug FakeNode tests both ways.
+- Sixth injectable `drop_config_commit_guard` = the REAL May-2015 bug: hand-driven
+  mechanism test replays the raft-dev example exactly (+ guarded twin); pinned natural
+  repro n=6 chaos seed 354 (1000-seed hunt; 5-server control sweep clean by majority
+  geometry); ddmin shrinks it (test_shrink.py).
+- Docs: README membership section + historical-bug story; CHANGELOG 1.1.0; version
+  1.1.0; test counts corrected (343 -> 407 +1 slow).
 
 ## Exact next step
-Step 10 — Ship v1.0.0. (a) `harmonia report` command: a single self-contained stdlib HTML
-page (run summary + message/fault stats + the SVG timeline inline + linearizability PASS/
-verdict; on a shrunk failure, the minimal repro). Pure function of RunResult+verdict ->
-golden-file HTML test. (b) README overhaul: document the full feature set (KV state machine,
-sessions/dedup, linearizability oracle, bug gallery, schedule shrinker, crash-restart,
-snapshots+InstallSnapshot, ReadIndex) with the injected-bug -> minimal-repro demo; update
-Scope & limitations (single-server membership OUT; real-disk OUT; Byzantine OUT; state
-precisely what the bounded linearizability search does/does not do); fix the test-count and
-`python -m pytest` line (now ~337). (c) CHANGELOG -> 1.0.0 with the real test count + bump
-pyproject version to 1.0.0. (d) Adversarial 3-lens review via a Workflow (Raft-correctness /
-determinism / oracle+checker-correctness) over the whole branch diff; fix confirmed
-findings. (e) Final gates green (pytest + replay + ruff + mypy --strict + the 100-seed CLI
-sweep). (f) merge --no-ff to main, tag v1.0.0, push, confirm CI green (CI runs on main).
-Guardrail: honest claims (bounded KV-register linearizability, educational, no affiliation).
-Two ordered sub-parts. (5a) Lift the fault-driver decisions into an explicit, replayable
-`Schedule` object: a deterministic suppression MASK threaded through `_fault_tick` (each
-fault decision gets an index; a mask can suppress specific ones) — still rng-fed by
-default, and PROVEN digest-identical when the mask suppresses nothing (a determinism-
-neutral refactor; goldens unchanged). (5b) ddmin over that schedule: given a failing
-`(nodes, seed, faults, steps)` + a predicate (invariant fires OR oracle rejects), binary-
-search the earliest failing step, then reduce the fault-mask to the minimal set that still
-reproduces the SAME violation, each candidate replayed on a FRESH seeded Cluster (never
-mutating the live stream). Emit a replayable scenario + an SVG of just those events. Use
-the Step-4 bug repros as real failures to minimize (Bugs repros: vote@5/seed0,
-skiplog@5/seed6, commitreg@5/seed1, fig8@3/seed63, staleread@3/seed14). Tests:
-ddmin-finds-planted-faults (a synthetic predicate failing iff >=2 specific faults present
--> ddmin reduces a noisy schedule to exactly those 2), shrunk still reproduces SAME
-violation, local-minimality, idempotence, monotone+terminates, masked-run digest stable,
-healthy run -> empty counterexample, byte-identical minimal schedule per seed. Guardrails:
-mask suppression is a deterministic replayable mask (never a re-roll); assert masked-run
-digest stability; land 5a as its own proven-neutral commit before ddmin.
-Add a registry of TOGGLEABLE algorithm bugs, ALL OFF BY DEFAULT behind explicit config
-flags (e.g. a `Bugs` dataclass threaded into RaftNode/Cluster). Each, when enabled, must
-violate the specific invariant OR the linearizability oracle it targets within a bounded
-seed sweep: (a) drop the 5.4.2 current-term commit guard (Figure 8) -> StateMachineSafety/
-LeaderCompleteness; (b) vote for a less-up-to-date candidate (break 5.4.1) -> Leader
-Completeness / non-linearizable; (c) skip the AppendEntries log-matching consistency check
--> LogMatching; (d) let commit_index regress -> CommitIndexMonotonic; (e) a stale-leader
-local read bypassing the log -> the linearizability oracle CATCHES it (the positive
-control the oracle was built for). Tests: parametrized per bug -> the exact invariant/
-oracle it trips within a bounded sweep; with ALL bugs OFF the full sweep stays green AND
-the baseline digest equals the pre-feature constant (assert goldens UNCHANGED with the
-harness present-but-off); each bug pins a (seed, step) golden for the shrinker (Step 5) to
-minimize. Guardrail: INJECTABLE BUGS OFF BY DEFAULT (a test asserts default sweep green +
-digest unchanged). This is the positive control that proves the oracle/checker catch real
-consensus bugs; seeds the README before/after gallery.
+Nothing pending. v1.1.0 is complete and gate-green on `main`.
 
 ## Verify commands
 ```
@@ -162,6 +138,7 @@ consensus bugs; seeds the README before/after gallery.
 .venv/Scripts/python.exe -m ruff check .
 .venv/Scripts/python.exe -m mypy --strict harmonia
 .venv/Scripts/python.exe -m harmonia replay --seed 7 --faults chaos --steps 4000
+.venv/Scripts/python.exe -m harmonia check --seeds 100 --faults chaos --membership
 ```
 
 ## Determinism guardrails (see spec §"Determinism guardrails")
