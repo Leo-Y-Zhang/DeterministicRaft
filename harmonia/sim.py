@@ -99,6 +99,12 @@ class Network:
         self._record = record
         self._group: dict[int, int] = dict.fromkeys(self.node_ids, 0)
         self.crashed: set[int] = set()
+        # Link-level faults (the nemesis vocabulary): a down link silently eats traffic
+        # between one pair of nodes; a lossy link drops each message with a probability.
+        # Both are empty by default and, when empty, cost ZERO extra rng draws -- so a
+        # run without link faults is byte-identical to one on the pre-nemesis network.
+        self.down_links: set[frozenset[int]] = set()
+        self.lossy_links: dict[frozenset[int], float] = {}
         self.sent = 0
         self.delivered = 0
         self.dropped = 0
@@ -125,7 +131,27 @@ class Network:
         return len({self._group[n] for n in self.node_ids}) > 1
 
     def reachable(self, a: int, b: int) -> bool:
-        return self._group[a] == self._group[b]
+        return self._group[a] == self._group[b] and frozenset((a, b)) not in self.down_links
+
+    # -- link faults (undirected; see harmonia/nemesis.py) --------------------
+
+    def set_link_down(self, a: int, b: int) -> None:
+        self.down_links.add(frozenset((a, b)))
+
+    def set_link_up(self, a: int, b: int) -> None:
+        self.down_links.discard(frozenset((a, b)))
+
+    def link_is_down(self, a: int, b: int) -> bool:
+        return frozenset((a, b)) in self.down_links
+
+    def set_link_lossy(self, a: int, b: int, drop_p: float) -> None:
+        self.lossy_links[frozenset((a, b))] = drop_p
+
+    def clear_link_lossy(self, a: int, b: int) -> None:
+        self.lossy_links.pop(frozenset((a, b)), None)
+
+    def link_is_lossy(self, a: int, b: int) -> bool:
+        return frozenset((a, b)) in self.lossy_links
 
     # -- sending ------------------------------------------------------------
 
@@ -137,6 +163,12 @@ class Network:
             self.dropped += 1
             self._record("drop", f"n{src}->n{dst}|sender-crashed")
             return
+        if self.lossy_links:  # nemesis lossy link: decided at send time, like drop_p
+            drop_p = self.lossy_links.get(frozenset((src, dst)))
+            if drop_p is not None and self.sim.rng.random() < drop_p:
+                self.dropped += 1
+                self._record("drop", f"n{src}->n{dst}|lossy-link")
+                return
         if self.profile.drop_p > 0 and self.sim.rng.random() < self.profile.drop_p:
             self.dropped += 1
             self._record("drop", f"n{src}->n{dst}|lost")
@@ -153,6 +185,10 @@ class Network:
         if dst in self.crashed:
             self.dropped += 1
             self._record("drop", f"n{src}->n{dst}|dst-crashed")
+            return
+        if frozenset((src, dst)) in self.down_links:
+            self.dropped += 1
+            self._record("drop", f"n{src}->n{dst}|link-down")
             return
         if not self.reachable(src, dst):
             self.dropped += 1
