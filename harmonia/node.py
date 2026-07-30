@@ -463,7 +463,7 @@ class RaftNode:
             return False  # a leader never removes itself
         if self._config_index > self.commit_index:
             return False  # previous configuration change still in flight
-        if not self._committed_this_term:
+        if not self._committed_this_term and not self.bugs.drop_config_commit_guard:
             return False  # commit index may be stale until a current-term commit
         self.log.append(Entry(self.term, encode_config(new)))
         self.log_version += 1

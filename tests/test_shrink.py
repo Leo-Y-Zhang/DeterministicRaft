@@ -90,6 +90,22 @@ class TestShrinkOracleFailure:
         assert ce.scenario.steps <= 6000
 
 
+class TestShrinkHistoricalMembershipBug:
+    def test_shrinks_the_may_2015_membership_failure(self):
+        # the pinned natural repro of the dissertation-era single-server membership bug
+        # (see tests/test_membership.py); the counterexample stays deep -- ddmin proves
+        # nearly every fault in the schedule is load-bearing -- but it is 1-minimal,
+        # step-trimmed, and replayable verbatim
+        sc = Scenario(nodes=6, seed=354, faults="chaos", steps=6000, membership=True,
+                      bugs=Bugs(drop_config_commit_guard=True))
+        ce = shrink(sc)
+        assert ce is not None
+        assert ce.signature == "LeaderCompleteness"
+        assert failure_signature(ce.scenario) == "LeaderCompleteness"  # still reproduces
+        assert ce.scenario.steps <= sc.steps
+        assert ce.scenario.replay_command().endswith("--membership")
+
+
 class TestShrinkHealthy:
     def test_healthy_scenario_yields_no_counterexample(self):
         assert shrink(Scenario(nodes=5, seed=1, faults="chaos", steps=4000)) is None

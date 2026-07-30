@@ -1,9 +1,11 @@
 """The bug-injection harness: proof the checker and oracle catch real consensus bugs.
 
 Each injected bug, when armed, must be caught by the property it targets within a bounded
-seed search (four by an internal safety invariant, one -- stale local reads -- ONLY by the
+seed search (five by an internal safety invariant, one -- stale local reads -- ONLY by the
 linearizability oracle). With every bug off the system is byte-identical to an un-armed
-run, so the harness is invisible until deliberately enabled.
+run, so the harness is invisible until deliberately enabled. The sixth bug (the historical
+May-2015 single-server membership bug) is exercised in tests/test_membership.py and
+tests/test_shrink.py; only its registry membership is asserted here.
 """
 
 import pytest
@@ -101,7 +103,7 @@ class TestHarnessIsInvisibleWhenOff:
         assert not Bugs().any_enabled
         assert set(Bugs.names()) == {
             "drop_commit_term_guard", "vote_for_stale_candidate", "skip_log_consistency",
-            "allow_commit_regression", "stale_local_reads",
+            "allow_commit_regression", "stale_local_reads", "drop_config_commit_guard",
         }
 
     @pytest.mark.parametrize("faults", ["none", "light", "chaos"])
