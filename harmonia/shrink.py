@@ -37,10 +37,12 @@ class Scenario:
     steps: int
     bugs: Bugs = NO_BUGS
     suppressed: frozenset[int] = frozenset()
+    membership: bool = False
 
     def replay_command(self) -> str:
         return (f"harmonia replay --nodes {self.nodes} --seed {self.seed} "
-                f"--faults {self.faults} --steps {self.steps}")
+                f"--faults {self.faults} --steps {self.steps}"
+                + (" --membership" if self.membership else ""))
 
 
 @dataclass
@@ -82,11 +84,16 @@ def ddmin(elements: Sequence[int], reproduces: Callable[[list[int]], bool]) -> l
     return kept
 
 
+def _cluster(scenario: Scenario) -> Cluster:
+    return Cluster(num_nodes=scenario.nodes, seed=scenario.seed, faults=scenario.faults,
+                   bugs=scenario.bugs, suppressed=scenario.suppressed,
+                   membership=scenario.membership)
+
+
 def failure_signature(scenario: Scenario) -> str | None:
     """Run the scenario and classify its failure: the invariant name if one fired,
     "nonlinearizable" if the client history is not linearizable, else None."""
-    cluster = Cluster(num_nodes=scenario.nodes, seed=scenario.seed, faults=scenario.faults,
-                      bugs=scenario.bugs, suppressed=scenario.suppressed)
+    cluster = _cluster(scenario)
     try:
         cluster.run(scenario.steps)
     except InvariantViolation as violation:
@@ -95,16 +102,14 @@ def failure_signature(scenario: Scenario) -> str | None:
 
 
 def _fault_count(scenario: Scenario) -> int:
-    cluster = Cluster(num_nodes=scenario.nodes, seed=scenario.seed, faults=scenario.faults,
-                      bugs=scenario.bugs, suppressed=scenario.suppressed)
+    cluster = _cluster(scenario)
     with contextlib.suppress(InvariantViolation):
         cluster.run(scenario.steps)
     return cluster.fault_count
 
 
 def _fault_events(scenario: Scenario) -> list[str]:
-    cluster = Cluster(num_nodes=scenario.nodes, seed=scenario.seed, faults=scenario.faults,
-                      bugs=scenario.bugs, suppressed=scenario.suppressed)
+    cluster = _cluster(scenario)
     with contextlib.suppress(InvariantViolation):
         cluster.run(scenario.steps)
     return [f"{t}ms {kind} {detail}" for t, kind, detail in cluster.events
