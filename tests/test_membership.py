@@ -18,6 +18,7 @@ from _goldens import digest_for, key
 from _goldens import load as load_goldens
 from test_invariants import FakeNode
 
+from harmonia.bugs import NO_BUGS, Bugs
 from harmonia.cluster import Cluster
 from harmonia.invariants import InvariantChecker, InvariantViolation
 from harmonia.kv import PUT, Command
@@ -310,6 +311,156 @@ class TestMembershipEndToEnd:
         assert a.digest == b.digest
 
 
+BUGGY = Bugs(drop_config_commit_guard=True)
+
+
+class TestOngaroMembershipBug:
+    """The May-2015 raft-dev bug, replayed EXACTLY (universe {0..4}, voters {0,1,2,3}):
+    n0 (leader, term 1) starts adding n4 with nothing committed in its own term;
+    concurrently n1 (leader, term 2) removes n0 and commits entries under the shrunken
+    configuration with majority {1,2}; n0 is then re-elected with votes {0,3,4} -- a
+    majority of ITS five-server configuration, DISJOINT from {1,2} -- and overwrites the
+    committed entries. The amended algorithm (commit in your own term first) refuses both
+    unguarded appends, and the very commit that satisfies the guard also blocks the
+    disjoint election."""
+
+    def _wire(self, bugs=NO_BUGS):
+        sim = Simulator(1)
+        outbox = []
+        nodes = {
+            i: RaftNode(i, [p for p in range(5) if p != i], sim,
+                        send=lambda src, dst, msg: outbox.append((src, dst, msg)),
+                        record=lambda kind, detail: None,
+                        bugs=bugs, initial_voters=(0, 1, 2, 3))
+            for i in range(5)
+        }
+        return nodes, outbox
+
+    @staticmethod
+    def _deliver(nodes, outbox, dst, kind):
+        """Deliver (and consume) every queued message of ``kind`` addressed to ``dst``;
+        everything else stays queued until explicitly dropped (a partition, scripted)."""
+        matched = [(s, d, m) for s, d, m in outbox if d == dst and isinstance(m, kind)]
+        for item in matched:
+            outbox.remove(item)
+        for src, _, msg in matched:
+            nodes[dst].handle(src, msg)
+
+    def _elect(self, nodes, out, cand, granters):
+        nodes[cand].start_election()
+        for g in granters:
+            self._deliver(nodes, out, g, RequestVote)
+        self._deliver(nodes, out, cand, VoteReply)
+
+    def test_the_original_algorithm_loses_a_committed_entry(self):
+        nodes, out = self._wire(BUGGY)
+        checker = InvariantChecker(seed=0)
+        n0, n1 = nodes[0], nodes[1]
+
+        # 1. n0 wins term 1 with votes {0,1,2}; its heartbeats are lost (partition)
+        self._elect(nodes, out, 0, granters=[1, 2])
+        assert n0.role == LEADER
+        out.clear()
+
+        # 2. BUG: n0 starts adding n4 with NO commit in its own term; the config entry
+        #    C1 = {0,1,2,3,4} reaches only n4 before n0 is cut off
+        assert n0.change_config((0, 1, 2, 3, 4)) is True
+        self._deliver(nodes, out, 4, AppendEntries)
+        assert nodes[4].voters == (0, 1, 2, 3, 4)
+        out.clear()
+        checker.check(nodes, 1)  # nothing has gone wrong yet
+
+        # 3. n1 wins term 2 with votes {1,2,3} -- a majority of {0,1,2,3}, none of whom
+        #    ever saw C1
+        self._elect(nodes, out, 1, granters=[2, 3])
+        assert n1.role == LEADER and n1.term == 2
+        out.clear()
+
+        # 4. BUG again: n1 removes n0 pre-commit -> C2 = {1,2,3}, which reaches n2 and
+        #    commits with the two-server majority {1,2} of the NEW configuration
+        assert n1.change_config((1, 2, 3)) is True
+        self._deliver(nodes, out, 2, AppendEntries)
+        self._deliver(nodes, out, 1, AppendReply)
+        assert n1.commit_index == 1
+        out.clear()
+
+        # 5. n1 commits a client entry the same way -- the entry that will be lost
+        assert n1.client_command("committed-then-lost") is True
+        self._deliver(nodes, out, 2, AppendEntries)
+        self._deliver(nodes, out, 1, AppendReply)
+        assert n1.commit_index == 2
+        out.clear()
+        checker.check(nodes, 2)  # still legal: every commit is held by its majority
+
+        # 6. n0, which heard none of it, reaches term 3 and wins with {0,3,4} -- a
+        #    majority of ITS configuration C1, disjoint from n1's commit majority {1,2}
+        n0.start_election()  # term 2: nobody hears it
+        out.clear()
+        self._elect(nodes, out, 0, granters=[3, 4])
+        assert n0.role == LEADER and n0.term == 3
+
+        # 7. the checker catches the loss the moment the stale leader returns
+        with pytest.raises(InvariantViolation, match="LeaderCompleteness"):
+            checker.check(nodes, 3)
+
+    def test_the_amended_algorithm_refuses_the_same_script(self):
+        nodes, out = self._wire(NO_BUGS)
+        checker = InvariantChecker(seed=0)
+        n0, n1 = nodes[0], nodes[1]
+
+        self._elect(nodes, out, 0, granters=[1, 2])
+        assert n0.role == LEADER
+        out.clear()
+
+        # the guard refuses n0's add: nothing committed in term 1 yet
+        assert n0.change_config((0, 1, 2, 3, 4)) is False
+
+        self._elect(nodes, out, 1, granters=[2, 3])
+        assert n1.role == LEADER and n1.term == 2
+        out.clear()
+
+        # ...and refuses n1's remove for the same reason
+        assert n1.change_config((1, 2, 3)) is False
+
+        # the fix in action: n1 must first commit an entry in ITS term under the OLD
+        # four-server configuration, which takes three acks -- {1,2,3}...
+        assert n1.client_command("current-term-commit") is True
+        self._deliver(nodes, out, 2, AppendEntries)
+        self._deliver(nodes, out, 3, AppendEntries)
+        self._deliver(nodes, out, 1, AppendReply)
+        assert n1.commit_index == 1
+        # ...and only then may it reconfigure
+        assert n1.change_config((1, 2, 3)) is True
+        out.clear()
+
+        # n0 attempts the disjoint election -- and cannot win it: n3 now holds a term-2
+        # entry so it refuses, and n4 is not even in n0's (unchanged) configuration
+        n0.start_election()  # term 2: nobody hears it
+        out.clear()
+        self._elect(nodes, out, 0, granters=[3, 4])
+        assert n0.role == CANDIDATE  # never leader: the committed entry stays safe
+        checker.check(nodes, 1)  # and the checker agrees nothing was lost
+
+
+class TestHistoricalBugUnderChurn:
+    def test_pinned_seed_reproduces_the_loss_naturally(self):
+        # Found by a 1000-seed hunt. The interleaving needs a six-server universe (only
+        # there can two five-server configurations have disjoint 3-majorities), a leader
+        # cut off mid-change, a second unguarded leader, and a later re-election -- rare
+        # enough that the bug survived public review from 2014 to May 2015.
+        with pytest.raises(InvariantViolation, match="LeaderCompleteness"):
+            Cluster(num_nodes=6, seed=354, faults="chaos", membership=True,
+                    bugs=BUGGY).run(6000)
+
+    def test_five_server_universe_survives_even_the_buggy_algorithm(self):
+        # Geometry as a control: with add-first churn on a five-server universe, every
+        # reachable pair of configurations has overlapping majorities (3+3 > 5), so the
+        # sweep stays clean even with the guard dropped -- the bug NEEDS the sixth server.
+        for seed in range(10):
+            Cluster(num_nodes=5, seed=seed, faults="chaos", membership=True,
+                    bugs=BUGGY).run(4000)  # no InvariantViolation
+
+
 # Membership-enabled configs: own pinned golden matrix (default digests stay untouched).
 MEMBERSHIP_GOLDENS = {
     (5, 1, "chaos", 4000): "e2a45649bd89ee47d04a45a0a756ce1dadf01efdd43ee1e99e42730a912f6761",
@@ -331,3 +482,12 @@ def test_membership_off_leaves_default_goldens_untouched():
     goldens = load_goldens()
     for cfg in [(3, 1, "none", 2000), (5, 7, "chaos", 3000)]:
         assert digest_for(cfg) == goldens[key(cfg)]["digest"]
+
+
+def test_unarmed_bug_registry_leaves_membership_goldens_untouched():
+    """A membership run with the (all-off) bug registry explicitly armed is byte-identical
+    to its pinned golden -- the sixth injectable is invisible until enabled."""
+    nodes, seed, faults, steps = cfg = (5, 1, "chaos", 4000)
+    digest = Cluster(num_nodes=nodes, seed=seed, faults=faults, membership=True,
+                     bugs=Bugs()).run(steps).digest
+    assert digest == MEMBERSHIP_GOLDENS[cfg]
