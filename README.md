@@ -20,6 +20,7 @@ quarrelling nodes to agreement and proves they got there safely.*
 
 ```
 $ harmonia check --seeds 300 --faults chaos
+harmonia check: seeds 0..299 nodes=5 faults=chaos steps=5000
 seeds=300 faults=chaos invariant_checks=1500000 violations=0
 ```
 
@@ -41,20 +42,37 @@ applied to the most teachable consensus algorithm.
 ## What a run looks like
 
 ```
-$ harmonia run --nodes 5 --seed 42 --faults chaos --steps 20000
+$ harmonia run --nodes 5 --seed 47 --faults chaos --steps 20000
 ...
-  n0 up   role=candidate term=212 commit=111  applied=111  len=111  log sha256:fb2319200137
-  n1 down role=follower  term=211 commit=111  applied=111  len=111  log sha256:fb2319200137
-  n2 up   role=follower  term=211 commit=111  applied=111  len=111  log sha256:fb2319200137
-  n3 up   role=leader    term=211 commit=111  applied=111  len=112  log sha256:8ac10e064571
-  n4 up   role=follower  term=211 commit=111  applied=111  len=112  log sha256:8ac10e064571
+commands: submitted=129 committed=126 config_changes=0
+invariants: OK (20000 checks, one after every step)
+trace digest: sha256:e922a29bdf03d040afcd645957631d08ab8f1f565d0a286b7fd9c0fef9e1df00
+final logs:
+  n0 up   role=leader    term=176 commit=126  applied=126  len=128  log sha256:8be4055887f1
+  n1 up   role=follower  term=177 commit=126  applied=126  len=126  log sha256:40f3fac899e1
+  n2 up   role=follower  term=176 commit=126  applied=126  len=128  log sha256:8be4055887f1
+  n3 down role=follower  term=177 commit=0    applied=0    len=126  log sha256:40f3fac899e1
+  n4 up   role=leader    term=177 commit=126  applied=126  len=126  log sha256:40f3fac899e1
 ```
 
-Read that closely: after 20,000 steps of chaos (drops, duplicates, delays,
-reordering, partitions, crashes), every node's log is byte-identical up to
-the commit index — matching SHA-256 through entry 111 — while a stale
-candidate campaigns in term 212 and the leader carries one not-yet-committed
-entry. That is Raft's safety guarantee, visible in a shell.
+Read that closely — after 20,000 steps of chaos (drops, duplicates, delays,
+reordering, partitions, crashes) the final frame is a safety lesson in five lines:
+
+- **Two nodes print `leader`, and that is legal.** Election Safety is *per term*:
+  `n4` leads term 177 while a partitioned `n0` still believes it leads term 176 —
+  it has not yet heard that it was deposed.
+- **Every up node agrees on the same 126 committed, applied commands** (Log
+  Matching and State Machine Safety, machine-checked after every one of the
+  20,000 steps). The two extra entries on the deposed leader's side (`len=128`
+  vs `commit=126`) are uncommitted: no node has applied them, and Raft promises
+  nothing about an entry until it commits.
+- **`n3` is crashed mid-run.** Its volatile state really is gone (`commit=0`),
+  but its persisted log hashes identical to the current leader's
+  (`40f3fac899e1`) — exactly what must survive a crash, and nothing more.
+
+That is Raft's safety guarantee, visible in a shell. Run the command yourself and
+you get this exact output; `replay` with the same arguments re-derives the same
+trace digest byte-for-byte — twice, comparing the two attempts.
 
 Pass `--timeline out.svg` to any `run` to emit a dependency-free SVG timeline
 (terms, elections, commits and partitions per node over virtual time):
@@ -62,6 +80,12 @@ Pass `--timeline out.svg` to any `run` to emit a dependency-free SVG timeline
 ```
 harmonia run --nodes 5 --seed 42 --faults chaos --steps 20000 --timeline out.svg
 ```
+
+The committed example below is `docs/showcase-timeline.svg`, produced by exactly
+that command — regenerating it today is byte-identical to the checked-in file,
+which is the determinism guarantee doing its job:
+
+![SVG timeline of a 5-node chaos run: per-node terms, elections, commits and partitions over virtual time](docs/showcase-timeline.svg)
 
 ## The five safety properties -> checked invariants
 
@@ -214,7 +238,8 @@ harmonia report --seed 42 --faults chaos --out report.html   # self-contained HT
 
 `harmonia report` writes one standalone HTML page — run summary, fault/verification
 stats, the inline SVG timeline and the linearizability verdict — the whole run on a
-single shareable artifact.
+single shareable artifact. A committed example (the same seed-42 chaos run as the
+timeline above) lives at `docs/showcase-report.html`.
 
 The `harmonia` console script is installed by the editable install; the same
 commands run via `python -m harmonia ...` without it.
