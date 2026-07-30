@@ -127,6 +127,13 @@ Themis; see [[project_repo_max_upgrades]]).
   geometry); ddmin shrinks it (test_shrink.py).
 - Docs: README membership section + historical-bug story; CHANGELOG 1.1.0; version
   1.1.0; test counts corrected (343 -> 407 +1 slow).
+- Presentation pass (2026-07-30, post-ship, docs-only commit): the README example-run
+  block was STALE (dated from v0.1.0, before the crash-restart chaos rebaseline) —
+  replaced with the real output of seed 47 (two same-time leaders in different terms,
+  uncommitted divergence, a crashed node) and a narrative that only claims what the
+  pasted output + checked invariants prove. Showcase report + timeline re-verified
+  byte-identical against a fresh regeneration and now linked/embedded from the README.
+  Every pasted number re-run live (300-seed sweep line, replay digests, 407+1 counts).
 
 ## Exact next step
 Nothing pending. v1.1.0 is complete and gate-green on `main`.
