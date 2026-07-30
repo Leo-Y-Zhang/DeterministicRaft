@@ -117,10 +117,12 @@ class TestInstallSnapshot:
 
 # Pinned digests for snapshot-enabled configs -- the tripwire's own golden matrix, kept
 # separate from tests/goldens.json so the default (snapshot-off) digests stay untouched.
+# Rebaselined once for membership: InstallSnapshot now carries the configuration in force
+# at the snapshot index (a deliberate wire-format change; message reprs feed the trace).
 SNAPSHOT_GOLDENS = {
-    (5, 1, "chaos", 4000): "f814f448c8b954ce26ea9ce8dbc3d7b206f6c838174280f3414f50bca2fccf9c",
-    (3, 4, "light", 3000): "42df01fd1359ef51008a5b0e7cd9374949e6db21fc247f46f442f513ce8e1f8e",
-    (5, 9, "chaos", 5000): "3f185f68e7b8a4a97fdafb9cc97353f7405843ff4dcb605a6b17276ab77945f1",
+    (5, 1, "chaos", 4000): "b60637aa24a1a2ce774c12e662da77d6904ed147849e354cb84e4aa118121018",
+    (3, 4, "light", 3000): "bac9b391219428930fcda4d30c1080a057097f55c3e6831741624ec26c56f860",
+    (5, 9, "chaos", 5000): "045420f3aca59e0e22459a8d46edf80397f3bcbdc2bdf093ba50f1e2e9cbd095",
 }
 
 

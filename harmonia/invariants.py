@@ -1,8 +1,11 @@
 """Safety invariant checker, run after every simulator step.
 
 Asserts the five Raft safety properties from Figure 3 of the paper, plus commit
-index monotonicity. A violation raises InvariantViolation carrying the seed and
-step so the run can be replayed exactly.
+index monotonicity and a per-configuration commit quorum (a newly committed entry
+must be held by a majority of the committing node's CURRENT configuration --
+membership changes make cluster majorities per-node state, never a fixed size).
+A violation raises InvariantViolation carrying the seed and step so the run can
+be replayed exactly.
 
 The checker only reads node state (role, term, log, commit_index, applied,
 log_version), never mutates it. Caches keyed on log_version keep the per-step
@@ -23,7 +26,9 @@ class NodeView(Protocol):
 
     Log access is LOGICAL (1-based indices), so the checker never sees the physical
     compaction offset: base_index is the highest index folded into a snapshot, and the
-    live `log`/`applied` cover indices above it (`applied[k]` is logical base_index+1+k)."""
+    live `log`/`applied` cover indices above it (`applied[k]` is logical base_index+1+k).
+    `voters` is the node's CURRENT cluster configuration (membership changes make this
+    per-node, per-moment state); majorities are judged against it, never a fixed size."""
 
     id: int
     role: str
@@ -35,6 +40,7 @@ class NodeView(Protocol):
     incarnation: int
     base_index: int
     base_term: int
+    voters: tuple[int, ...]
 
     def last_log_index(self) -> int: ...
     def term_at(self, index: int) -> int: ...
@@ -65,6 +71,9 @@ class InvariantChecker:
         self.committed: dict[int, tuple[Entry, int]] = {}
         # index -> command first seen applied at that index, by any node
         self.applied_at: dict[int, str] = {}
+        # highest commit index observed on ANY node so far; a commit index above it is a
+        # global first observation, which is where the per-configuration quorum is judged
+        self._max_commit: int = 0
         # per-node caches
         self._prev_commit: dict[int, int] = {}
         self._applied_seen: dict[int, int] = {}
@@ -178,7 +187,14 @@ class InvariantChecker:
                                    f"but diverge at index {idx}", step)
                 self._pair_checked[key] = vers
 
-    # -- commit bookkeeping (feeds Leader Completeness + monotonicity) ---------
+    # -- commit bookkeeping (feeds Leader Completeness + monotonicity + quorum) ---------
+
+    def _holds(self, n: NodeView, idx: int, entry: Entry) -> bool:
+        """Does this node hold the committed entry? Either live in its log, or folded
+        into its snapshot (a compacted prefix is committed state by construction)."""
+        if idx <= n.base_index:
+            return True
+        return n.last_log_index() >= idx and n.entry_at(idx) == entry
 
     def _observe_commits(self, nodes: Mapping[int, NodeView], ids: list[int], step: int) -> None:
         for i in ids:
@@ -198,6 +214,21 @@ class InvariantChecker:
                     self._fail("StateMachineSafety",
                                f"index {idx} committed as {known[0]} on one node "
                                f"but {entry} on n{n.id}", step)
+                # Commit quorum, per CONFIGURATION (membership makes majorities per-node
+                # state): a globally NEW commit must be backed by a majority of the
+                # committing node's current voting set actually holding the entry. The
+                # first observer of a new commit is always the leader that counted the
+                # majority (the checker runs after every step, before replies propagate),
+                # so its `voters` is exactly the configuration the count was taken over.
+                if idx > self._max_commit:
+                    holders = sum(1 for v in n.voters
+                                  if v in nodes and self._holds(nodes[v], idx, entry))
+                    if holders * 2 <= len(n.voters):
+                        self._fail(
+                            "CommitQuorum",
+                            f"n{n.id} committed index {idx} but only {holders} of its "
+                            f"{len(n.voters)}-server configuration hold the entry", step)
+            self._max_commit = max(self._max_commit, n.commit_index)
             self._prev_commit[i] = n.commit_index
 
     # -- Leader Completeness: committed entries appear in all future leaders ---

@@ -21,8 +21,9 @@ from .kv import CAS, GET, PUT, Command, HistoryEntry
 from .node import DEFAULT_CONFIG, LEADER, Message, RaftConfig, RaftNode
 from .sim import PROFILES, FaultProfile, Network, Simulator
 
-CLIENT_INTERVAL = 100  # ms between client command attempts
-FAULT_INTERVAL = 100   # ms between fault-driver decisions
+CLIENT_INTERVAL = 100      # ms between client command attempts
+FAULT_INTERVAL = 100       # ms between fault-driver decisions
+MEMBERSHIP_INTERVAL = 300  # ms between membership-change attempts (membership mode)
 
 # Deterministic client workload: a few clients hammering a small keyspace so operations
 # contend on the same keys (which is what makes linearizability interesting to check).
@@ -75,15 +76,28 @@ class Cluster:
         bugs: Bugs = NO_BUGS,
         suppressed: frozenset[int] = frozenset(),
         read_index: bool = False,
+        membership: bool = False,
+        initial_voters: tuple[int, ...] | None = None,
     ) -> None:
         if num_nodes < 1:
             raise ValueError("need at least one node")
         if faults not in PROFILES:
             raise ValueError(f"unknown fault profile: {faults!r}")
+        if membership and num_nodes < 3:
+            raise ValueError("membership mode needs at least three nodes")
+        if initial_voters is not None and not set(initial_voters) <= set(range(num_nodes)):
+            raise ValueError("initial_voters must name existing nodes")
         self.seed = seed
         self.faults = faults
         self.bugs = bugs
         self._read_index = read_index  # serve GETs via ReadIndex instead of through the log
+        # Membership mode: start with one spare server outside the configuration and run
+        # a deterministic churn driver (add it back in, rotate single-server removals).
+        # initial_voters alone (no driver) supports hand-driven reconfiguration tests.
+        self._membership = membership
+        if membership and initial_voters is None:
+            initial_voters = tuple(range(num_nodes - 1))
+        self._member_turn = 0
         # Each fault injection (partition-form / crash) gets an ordinal; the shrinker can
         # SUPPRESS specific ordinals to test whether a bug still reproduces without them.
         # The rng is drawn identically regardless, so an empty mask is byte-identical.
@@ -103,17 +117,19 @@ class Cluster:
         self.net = Network(self.sim, ids, self.profile, self._deliver, self.record)
         self.nodes: dict[int, RaftNode] = {
             i: RaftNode(i, [p for p in ids if p != i], self.sim, self.net.send,
-                        self.record, config, on_apply=self._on_apply, bugs=bugs)
+                        self.record, config, on_apply=self._on_apply, bugs=bugs,
+                        initial_voters=initial_voters)
             for i in ids
         }
         self.checker = InvariantChecker(
             seed,
             replay_hint=(f"harmonia replay --nodes {num_nodes} --seed {seed} "
-                         f"--faults {faults}"),
+                         f"--faults {faults}" + (" --membership" if membership else "")),
         )
         self.stats: dict[str, int] = {
             "elections": 0, "leaders_elected": 0, "partitions": 0, "heals": 0,
             "crashes": 0, "resumes": 0, "commands_submitted": 0, "retries": 0,
+            "config_changes": 0,
         }
         self._crash_limit = (num_nodes - 1) // 2  # keep a majority alive under chaos
         for i in ids:
@@ -128,6 +144,8 @@ class Cluster:
             self.sim.schedule(client_interval, self._client_tick)
         if self.profile.partitions or self.profile.crashes:
             self.sim.schedule(FAULT_INTERVAL, self._fault_tick)
+        if membership:
+            self.sim.schedule(MEMBERSHIP_INTERVAL, self._membership_tick)
 
     # -- recording ------------------------------------------------------------
 
@@ -139,6 +157,8 @@ class Cluster:
             self.stats["elections"] += 1
         elif kind == "role" and "|leader|" in detail:
             self.stats["leaders_elected"] += 1
+        elif kind == "cfgchange":
+            self.stats["config_changes"] += 1
 
     def _deliver(self, src: int, dst: int, msg: Message) -> None:
         self.nodes[dst].handle(src, msg)
@@ -256,6 +276,28 @@ class Cluster:
     def _maybe_resume(self, node_id: int) -> None:
         if node_id in self.net.crashed:
             self.resume(node_id)
+
+    def _membership_tick(self) -> None:
+        """Deterministic membership churn: add the lowest server missing from the current
+        configuration back in, otherwise remove the next server in rotation (never the
+        leader -- a leader refuses to remove itself). Purely counter-driven, so it draws
+        NO randomness; the change is submitted to whichever node currently leads, and the
+        leader's own guards decide whether it is accepted now or retried next tick."""
+        leader = self.leader()
+        if leader is not None:
+            universe = sorted(self.nodes)
+            missing = [i for i in universe if i not in leader.voters]
+            if missing:
+                proposal = tuple(sorted([*leader.voters, missing[0]]))
+            else:
+                victim = universe[self._member_turn % len(universe)]
+                if victim == leader.id:
+                    self._member_turn += 1
+                    victim = universe[self._member_turn % len(universe)]
+                proposal = tuple(v for v in leader.voters if v != victim)
+            if leader.change_config(proposal) and not missing:
+                self._member_turn += 1
+        self.sim.schedule(MEMBERSHIP_INTERVAL, self._membership_tick)
 
     # -- fault controls (also used directly by tests) --------------------------
 

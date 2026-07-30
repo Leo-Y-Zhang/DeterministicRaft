@@ -6,10 +6,11 @@ timeouts, RequestVote and AppendEntries RPCs, log replication, commitIndex
 advancement (majority match with the current-term guard from section 5.4.2), and
 follower log repair via nextIndex backoff.
 
-Deliberately NOT implemented (see README limitations): membership changes,
-snapshots/log compaction, persistence to disk. A "crash" in the simulator pauses
-a node with its state intact, which is equivalent to synchronous persistence of
-currentTerm/votedFor/log.
+Also here: crash-restart with true volatile-state loss, snapshots/InstallSnapshot
+(section 7), ReadIndex reads (section 8), and single-server membership changes
+(dissertation ch. 4): a configuration entry in the log names the current voting set
+and takes effect IMMEDIATELY on append (pre-commit); elections, commits and ReadIndex
+confirmations count majorities over that set. See README limitations for the edges.
 
 Log indices are 1-based, exactly as in the paper. With no snapshot the entry at logical
 index i lives at self.log[i-1]; once a prefix is compacted (base_index > 0) all indexing
@@ -31,6 +32,27 @@ if TYPE_CHECKING:
 FOLLOWER = "follower"
 CANDIDATE = "candidate"
 LEADER = "leader"
+
+# A configuration entry travels through the log as an ordinary command string with this
+# prefix. It is NOT a state-machine command: Command.decode treats it as a NOOP (the kv
+# store ignores it); the Raft layer decodes it and adopts the named voting set the moment
+# the entry is APPENDED (dissertation ch. 4 -- effective pre-commit).
+CONFIG_PREFIX = "cfg:"
+
+
+def encode_config(voters: tuple[int, ...]) -> str:
+    """Canonical log-entry command for a configuration (sorted voter ids)."""
+    return CONFIG_PREFIX + ",".join(str(v) for v in sorted(voters))
+
+
+def decode_config(command: str) -> tuple[int, ...] | None:
+    """The voting set named by a configuration entry, or None for any other command."""
+    if not command.startswith(CONFIG_PREFIX):
+        return None
+    try:
+        return tuple(int(v) for v in command[len(CONFIG_PREFIX):].split(","))
+    except ValueError:
+        return None
 
 
 @dataclass(frozen=True)
@@ -75,13 +97,15 @@ class AppendReply:
 @dataclass(frozen=True)
 class InstallSnapshot:
     """Sent to a follower that has fallen behind the leader's compaction point (section 7).
-    Carries the whole state-machine image instead of individual log entries."""
+    Carries the whole state-machine image instead of individual log entries, including the
+    configuration in force at the snapshot index (membership must survive compaction)."""
     term: int
     leader: int
     last_index: int
     last_term: int
     store: dict[str, str]
     sessions: dict[int, tuple[int, str]]
+    voters: tuple[int, ...]
 
 
 @dataclass(frozen=True)
@@ -130,6 +154,7 @@ class RaftNode:
         config: RaftConfig = DEFAULT_CONFIG,
         on_apply: Callable[[str, str], None] | None = None,
         bugs: Bugs = NO_BUGS,
+        initial_voters: tuple[int, ...] | None = None,
     ) -> None:
         self.id = node_id
         self.peers = sorted(peer_ids)
@@ -139,7 +164,6 @@ class RaftNode:
         self._on_apply = on_apply     # (command_str, result) reported as each entry applies
         self.bugs = bugs              # deliberately-injected defects (default: none)
         self.config = config
-        self.cluster_size = len(self.peers) + 1
 
         # Persistent state (Figure 2), rebuilt from stable storage after a crash.
         self.term: int = 0
@@ -152,6 +176,15 @@ class RaftNode:
         self.base_index: int = 0
         self.base_term: int = 0
         self.snapshot: Snapshot | None = None  # persisted compacted state (Figure 2 + §7)
+        # Cluster membership (dissertation ch. 4). The current configuration is DERIVED
+        # state: the latest configuration entry in the log governs, falling back to the
+        # snapshot's and then the initial configuration -- so it survives a crash without
+        # separate persistence. Default: every server is a voter (a fixed configuration).
+        self._initial_voters: tuple[int, ...] = (
+            tuple(sorted(initial_voters)) if initial_voters is not None
+            else tuple(sorted([*self.peers, node_id])))
+        self.voters: tuple[int, ...] = self._initial_voters
+        self._config_index: int = 0   # logical index of the governing configuration entry
 
         # Volatile state.
         self.role: str = FOLLOWER
@@ -207,6 +240,43 @@ class RaftNode:
         the whole tail instead of a negative-offset slice."""
         return tuple(self.log[max(0, self._phys(from_index)):])
 
+    # -- membership (dissertation ch. 4): configuration helpers ----------------
+
+    def _other_voters(self) -> list[int]:
+        """The servers this node campaigns to / replicates to: the current voting set
+        minus itself (sorted, so iteration order is deterministic)."""
+        return [v for v in self.voters if v != self.id]
+
+    def _adopt_config(self, voters: tuple[int, ...], index: int) -> None:
+        """Switch to the configuration named at logical `index`, effective immediately."""
+        self.voters = voters
+        self._config_index = index
+
+    def _rebuild_config(self) -> None:
+        """Recompute the configuration from persistent state: the LATEST configuration
+        entry in the log governs; below the log, the snapshot's; below that, the initial
+        configuration. Called after crash-restart, log truncation and InstallSnapshot --
+        membership is derived state, never separately persisted."""
+        voters, index = self._initial_voters, 0
+        if self.snapshot is not None:
+            voters, index = self.snapshot.voters, self.snapshot.last_index
+        for i, entry in enumerate(self.log):
+            decoded = decode_config(entry.command)
+            if decoded is not None:
+                voters, index = decoded, self.base_index + i + 1
+        self._adopt_config(voters, index)
+
+    def _config_at(self, upto: int) -> tuple[int, ...]:
+        """The configuration in force at logical index `upto` (the latest configuration
+        entry at or below it) -- what a snapshot covering `upto` must record."""
+        for i in range(upto - self.base_index, 0, -1):
+            decoded = decode_config(self.log[i - 1].command)
+            if decoded is not None:
+                return decoded
+        if self.snapshot is not None:
+            return self.snapshot.voters
+        return self._initial_voters
+
     # -- lifecycle ------------------------------------------------------------
 
     def start(self) -> None:
@@ -249,6 +319,7 @@ class RaftNode:
         self._client_index = {}
         self._pending_reads = {}
         self._committed_this_term = False
+        self._rebuild_config()      # membership comes back from the persisted log/snapshot
         self._timer_seq += 1        # invalidate any in-flight timer callbacks
         self.incarnation += 1
 
@@ -293,7 +364,12 @@ class RaftNode:
         self._arm_election_timer()
 
     def start_election(self) -> None:
-        """Become candidate: bump term, vote for self, solicit votes (section 5.2)."""
+        """Become candidate: bump term, vote for self, solicit votes (section 5.2).
+        A server outside its own current configuration never campaigns (it has not been
+        added yet, or has been removed); it just re-arms its timer and waits."""
+        if self.id not in self.voters:
+            self._arm_election_timer()
+            return
         self.term += 1
         self.role = CANDIDATE
         self.voted_for = self.id
@@ -304,9 +380,9 @@ class RaftNode:
         self._arm_election_timer()  # randomized retry breaks split votes
         req = RequestVote(self.term, self.id, self.last_log_index(),
                           self.term_at(self.last_log_index()))
-        for p in self.peers:
+        for p in self._other_voters():
             self._send(self.id, p, req)
-        self._maybe_win()  # single-node cluster wins immediately
+        self._maybe_win()  # single-node configuration wins immediately
 
     def _become_leader(self) -> None:
         self.role = LEADER
@@ -332,7 +408,9 @@ class RaftNode:
         self._client_index = index
 
     def _maybe_win(self) -> None:
-        if self.role == CANDIDATE and len(self._votes) * 2 > self.cluster_size:
+        """Win with a majority of the CURRENT configuration (only voters' votes count)."""
+        votes = sum(1 for v in self._votes if v in self.voters)
+        if self.role == CANDIDATE and votes * 2 > len(self.voters):
             self._become_leader()
 
     # -- client interface -----------------------------------------------------
@@ -359,6 +437,42 @@ class RaftNode:
             f"n{self.id}|index={self.last_log_index()}|term={self.term}|{command}",
         )
         self._broadcast_heartbeats()  # replicate eagerly instead of waiting a beat
+        return True
+
+    def change_config(self, new_voters: tuple[int, ...]) -> bool:
+        """Single-server membership change (dissertation ch. 4): append a configuration
+        entry that adds or removes EXACTLY ONE server, effective immediately on append
+        (pre-commit) on every server that stores it.
+
+        Two guards make effective-on-append safe, and both are required:
+          * one change in flight -- refuse while the previous configuration entry in this
+            leader's log is uncommitted (ch. 4.1);
+          * the May-2015 raft-dev amendment -- refuse until this leader has committed an
+            entry in its CURRENT term. Without it, leaders elected under the same base
+            configuration can each install a different single-server change whose
+            majorities do not overlap, and a committed entry can be lost.
+
+        Simplification (documented in the README): a leader refuses to remove itself, so
+        a leader is always a member of its own configuration."""
+        if self.role != LEADER or not self.alive:
+            return False
+        new = tuple(sorted(set(new_voters)))
+        if len(set(new) ^ set(self.voters)) != 1:
+            return False  # not a single-server change
+        if self.id not in new:
+            return False  # a leader never removes itself
+        if self._config_index > self.commit_index:
+            return False  # previous configuration change still in flight
+        if not self._committed_this_term:
+            return False  # commit index may be stale until a current-term commit
+        self.log.append(Entry(self.term, encode_config(new)))
+        self.log_version += 1
+        self._adopt_config(new, self.last_log_index())
+        self.match_index[self.id] = self.last_log_index()
+        self._record("cfgchange",
+                     f"n{self.id}|index={self.last_log_index()}|term={self.term}|"
+                     + ",".join(str(v) for v in new))
+        self._broadcast_heartbeats()
         return True
 
     # -- message dispatch -----------------------------------------------------
@@ -394,9 +508,9 @@ class RaftNode:
         self._next_read_id += 1
         self._pending_reads[read_id] = (command, self.commit_index, {self.id})
         self._record("read", f"n{self.id}|id={read_id}|index={self.commit_index}")
-        for p in self.peers:
+        for p in self._other_voters():
             self._send(self.id, p, ReadHeartbeat(self.term, self.id, read_id))
-        self._try_serve_read(read_id)  # single-node cluster confirms immediately
+        self._try_serve_read(read_id)  # single-node configuration confirms immediately
         return True
 
     def _on_read_heartbeat(self, msg: ReadHeartbeat) -> None:
@@ -422,7 +536,8 @@ class RaftNode:
         if pending is None:
             return
         command, read_index, acks = pending
-        if len(acks) * 2 > self.cluster_size and self.last_applied >= read_index:
+        confirmed = sum(1 for a in acks if a in self.voters)
+        if confirmed * 2 > len(self.voters) and self.last_applied >= read_index:
             del self._pending_reads[read_id]
             result = self.kv.apply_read(Command.decode(command))
             self._record("readserved", f"n{self.id}|id={read_id}|{command}")
@@ -494,10 +609,15 @@ class RaftNode:
                 if self.term_at(index) != entry.term:
                     del self.log[self._phys(index):]
                     self.log_version += 1
+                    if self._config_index >= index:
+                        self._rebuild_config()  # governing configuration entry truncated
                 else:
                     continue
             self.log.append(entry)
             self.log_version += 1
+            decoded = decode_config(entry.command)
+            if decoded is not None:
+                self._adopt_config(decoded, index)  # effective on append (ch. 4)
         match = msg.prev_index + len(msg.entries)
 
         # Advance commit index; the max() guards against a stale, reordered
@@ -552,13 +672,15 @@ class RaftNode:
             self.log = []
         self.kv = KVStateMachine()
         self.kv.restore(msg.store, msg.sessions)
-        self.snapshot = Snapshot(msg.last_index, msg.last_term, dict(msg.store), dict(msg.sessions))
+        self.snapshot = Snapshot(msg.last_index, msg.last_term, dict(msg.store),
+                                 dict(msg.sessions), msg.voters)
         self.base_index = msg.last_index
         self.base_term = msg.last_term
         self.commit_index = msg.last_index
         self.last_applied = msg.last_index
         self.applied = []
         self.log_version += 1
+        self._rebuild_config()  # snapshot configuration, unless a kept tail supersedes it
         self._record("installsnap", f"n{self.id}|index={msg.last_index}|term={msg.last_term}")
         self._send(self.id, msg.leader, AppendReply(self.term, self.id, True, msg.last_index))
 
@@ -579,21 +701,21 @@ class RaftNode:
             return
         self._send(self.id, peer, InstallSnapshot(
             self.term, self.id, snap.last_index, snap.last_term,
-            dict(snap.store), dict(snap.sessions)))
+            dict(snap.store), dict(snap.sessions), snap.voters))
 
     def _broadcast_heartbeats(self) -> None:
-        for p in self.peers:
+        for p in self._other_voters():
             self._send_append_entries(p)
 
     def _advance_commit(self) -> None:
         """Commit rule (sections 5.3 / 5.4.2): advance to the highest N replicated on
-        a majority, but only if log[N].term == currentTerm. Entries from earlier
-        terms commit indirectly, never by counting replicas."""
+        a majority of the CURRENT configuration, but only if log[N].term == currentTerm.
+        Entries from earlier terms commit indirectly, never by counting replicas."""
         for n in range(self.last_log_index(), self.commit_index, -1):
             if self.term_at(n) != self.term and not self.bugs.drop_commit_term_guard:
                 break  # older-term entries below: the guard forbids direct commit
-            votes = sum(1 for m in self.match_index.values() if m >= n)
-            if votes * 2 > self.cluster_size:
+            votes = sum(1 for v in self.voters if self.match_index.get(v, 0) >= n)
+            if votes * 2 > len(self.voters):
                 self._set_commit_index(n)
                 self._committed_this_term = True  # commit index is now trustworthy
                 break
@@ -625,10 +747,12 @@ class RaftNode:
         upto = self.last_applied
         last_term = self.term_at(upto)
         store, sessions = self.kv.capture()
+        snap_voters = self._config_at(upto)  # NOT necessarily self.voters: a newer,
+        #                                      uncompacted configuration entry may govern
         del self.log[: upto - self.base_index]  # drop the compacted prefix
         self.applied = self.applied[upto - self.base_index:]  # ...and its applied labels
         self.base_index = upto
         self.base_term = last_term
-        self.snapshot = Snapshot(upto, last_term, store, sessions)
+        self.snapshot = Snapshot(upto, last_term, store, sessions, snap_voters)
         self.log_version += 1
         self._record("snapshot", f"n{self.id}|index={upto}|term={last_term}")
