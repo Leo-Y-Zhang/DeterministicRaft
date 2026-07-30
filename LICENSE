@@ -38,9 +38,25 @@ Subject to the restrictions in section 3, any person obtaining access to the Wor
 is granted a non-exclusive, non-transferable, revocable permission to do ONE
 thing only:
 
-  * to READ and VIEW the source code and documentation, for the sole purpose of
+  * to READ and VIEW the source code and documentation, for the purpose of
     evaluating the Author's technical ability — for example as a recruiter,
-    hiring manager, academic admissions reviewer, collaborator, or interviewer.
+    hiring manager, academic admissions reviewer, collaborator, or interviewer;
+    and
+
+  * to RUN the Work locally for that purpose — including its test suite and any
+    verification, audit or self-check tooling it ships — and to satisfy yourself
+    that it does what it claims.
+
+    This second right is deliberate rather than incidental. Several of these
+    projects are TOOLS whose documentation invites you to run them, and a licence
+    granting only "reading" would have contradicted the README while appearing to
+    support it. Anyone auditing a claim made by this Work may execute whatever it
+    provides for checking that claim, and may publish what they find — explicitly
+    including a refutation. A verification right that excluded publishing a
+    negative finding would be worthless.
+
+Running the Work locally to evaluate or check it is therefore permitted. Running
+it to provide a service to somebody else is not: see 3.5.
 
 That is the entire grant. No other right is given, by implication, estoppel, or
 otherwise.
