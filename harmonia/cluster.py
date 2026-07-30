@@ -18,6 +18,15 @@ from typing import Any
 from .bugs import NO_BUGS, Bugs
 from .invariants import InvariantChecker
 from .kv import CAS, GET, PUT, Command, HistoryEntry
+from .nemesis import (
+    CrashNode,
+    FlappingLink,
+    IsolateLeader,
+    LossyLink,
+    NemesisOp,
+    NemesisSchedule,
+    PartitionHalves,
+)
 from .node import DEFAULT_CONFIG, LEADER, Message, RaftConfig, RaftNode
 from .sim import PROFILES, FaultProfile, Network, Simulator
 
@@ -81,6 +90,7 @@ class Cluster:
         read_index: bool = False,
         membership: bool = False,
         initial_voters: tuple[int, ...] | None = None,
+        nemesis: NemesisSchedule | None = None,
     ) -> None:
         if num_nodes < 1:
             raise ValueError("need at least one node")
@@ -90,6 +100,9 @@ class Cluster:
             raise ValueError("membership mode needs at least three nodes")
         if initial_voters is not None and not set(initial_voters) <= set(range(num_nodes)):
             raise ValueError("initial_voters must name existing nodes")
+        if nemesis is not None and nemesis.max_node() >= num_nodes:
+            raise ValueError(f"nemesis schedule names node n{nemesis.max_node()}; "
+                             f"this cluster only has n0..n{num_nodes - 1}")
         self.seed = seed
         self.faults = faults
         self.bugs = bugs
@@ -124,10 +137,13 @@ class Cluster:
                         initial_voters=initial_voters)
             for i in ids
         }
+        self._nemesis = nemesis
         self.checker = InvariantChecker(
             seed,
             replay_hint=(f"harmonia replay --nodes {num_nodes} --seed {seed} "
-                         f"--faults {faults}" + (" --membership" if membership else "")),
+                         f"--faults {faults}" + (" --membership" if membership else "")
+                         + (f" --nemesis '{nemesis.to_json()}'"
+                            if nemesis is not None and nemesis.ops else "")),
         )
         self.stats: dict[str, int] = {
             "elections": 0, "leaders_elected": 0, "partitions": 0, "heals": 0,
@@ -149,6 +165,14 @@ class Cluster:
             self.sim.schedule(FAULT_INTERVAL, self._fault_tick)
         if membership:
             self.sim.schedule(MEMBERSHIP_INTERVAL, self._membership_tick)
+        if nemesis is not None:
+            # Every injection is scheduled up-front (expansion is sorted; same-instant
+            # ties keep declaration order, which the event queue preserves). Each fires
+            # through _nemesis_fire -> _fire_fault, so hand-authored faults share the
+            # random driver's suppression-mask ordinals and the shrinker just works.
+            for injection in nemesis.injections():
+                self.sim.schedule(injection.at,
+                                  lambda op=injection.op: self._nemesis_fire(op))
 
     # -- recording ------------------------------------------------------------
 
@@ -304,7 +328,77 @@ class Cluster:
                 self._member_turn += 1
         self.sim.schedule(MEMBERSHIP_INTERVAL, self._membership_tick)
 
+    # -- nemesis: declarative fault schedules (see harmonia/nemesis.py) --------
+
+    def _nemesis_fire(self, op: NemesisOp) -> None:
+        """Fire one scheduled injection. State-dependent targets (the believed leader,
+        an already-crashed node) are resolved FIRST -- drawing no randomness -- and an
+        injection with nothing to do is skipped without consuming an ordinal; otherwise
+        the mask decides via _fire_fault, exactly as for the random driver's faults.
+        Every recovery (heal / link-up / restore / resume) is scheduled only when its
+        injection actually fired, so a suppressed injection leaves no orphan events."""
+        if isinstance(op, PartitionHalves):
+            ids = sorted(self.nodes)
+            half = (len(ids) + 1) // 2
+            low, high = set(ids[:half]), set(ids[half:])
+            if not high:
+                self.record("nemesis", "partition_halves|single-node|skipped")
+                return
+            if not self._fire_fault():
+                return
+            self.set_partition([low, high])
+            self.sim.schedule(op.duration, self.heal_partition)
+        elif isinstance(op, IsolateLeader):
+            target = self.leader()
+            if target is None or len(self.nodes) < 2:
+                self.record("nemesis", "isolate_leader|no-leader|skipped")
+                return
+            if not self._fire_fault():
+                return
+            victim = target.id
+            self.set_partition([{victim}, {i for i in self.nodes if i != victim}])
+            self.sim.schedule(op.duration, self.heal_partition)
+        elif isinstance(op, FlappingLink):
+            if not self._fire_fault():
+                return
+            self.link_down(op.a, op.b)
+            self.sim.schedule(op.period, lambda: self.link_up(op.a, op.b))
+        elif isinstance(op, LossyLink):
+            if not self._fire_fault():
+                return
+            self.set_lossy_link(op.a, op.b, op.drop_p)
+            self.sim.schedule(op.duration, lambda: self.clear_lossy_link(op.a, op.b))
+        elif isinstance(op, CrashNode):
+            if not self.nodes[op.node].alive:
+                self.record("nemesis", f"crash_node|n{op.node}|already-down|skipped")
+                return
+            if not self._fire_fault():
+                return
+            self.pause(op.node)
+            self.sim.schedule(op.duration, lambda: self._maybe_resume(op.node))
+
     # -- fault controls (also used directly by tests) --------------------------
+
+    def link_down(self, a: int, b: int) -> None:
+        """Take the (undirected) link between a and b down; idempotent."""
+        if not self.net.link_is_down(a, b):
+            self.net.set_link_down(a, b)
+            self.record("linkdown", f"n{a}<->n{b}")
+
+    def link_up(self, a: int, b: int) -> None:
+        if self.net.link_is_down(a, b):
+            self.net.set_link_up(a, b)
+            self.record("linkup", f"n{a}<->n{b}")
+
+    def set_lossy_link(self, a: int, b: int, drop_p: float) -> None:
+        """Degrade the link between a and b: each message dropped with drop_p."""
+        self.net.set_link_lossy(a, b, drop_p)
+        self.record("lossy", f"n{a}<->n{b}|p={drop_p}")
+
+    def clear_lossy_link(self, a: int, b: int) -> None:
+        if self.net.link_is_lossy(a, b):
+            self.net.clear_link_lossy(a, b)
+            self.record("lossyheal", f"n{a}<->n{b}")
 
     def set_partition(self, groups: list[set[int]]) -> None:
         self.net.set_partition(groups)
