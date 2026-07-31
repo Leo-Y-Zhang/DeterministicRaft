@@ -182,6 +182,42 @@ at an injected bug and it hands back the handful of partitions and crashes that
 actually matter, plus a runnable replay. The fault-suppression mask leaves the RNG
 stream untouched when empty, so an un-shrunk run is bit-for-bit an ordinary one.
 
+## Directing the chaos: the nemesis vocabulary
+
+The random fault driver *explores* the fault space; a nemesis *directs* it.
+`harmonia/nemesis.py` is a vocabulary of declarative fault patterns —
+`partition_halves`, `isolate_leader` (resolved at fire time against whoever
+currently believes it leads), `flapping_link`, `lossy_link`, `crash_node` —
+composed into a `NemesisSchedule`: pure, validated data pinned to virtual-time
+instants, serialized to a compact JSON form that round-trips exactly. The name
+and the idea are Jepsen's nemesis process (no affiliation); the determinism is
+Harmonia's. Every command takes `--nemesis`:
+
+```bash
+harmonia run --nodes 3 --faults none --steps 4000 --nemesis \
+  '[{"pattern":"partition_halves","at":400,"duration":600},{"pattern":"crash_node","node":1,"at":1200,"duration":400}]'
+```
+
+With `--faults none` the profile injects nothing, so both faults in that run's
+output (`partitions=1 ... crashes=1`) are the schedule's; with `light` or
+`chaos` the schedule layers structure over random noise, still byte-identically
+replayable. Three rules keep schedules first-class citizens of the existing
+machinery rather than a parallel mechanism: patterns draw **zero randomness** of
+their own; every injection consumes an ordinal from the **same suppression mask**
+as the random driver, so ddmin minimises a hand-authored schedule with no new
+code paths and a violation's printed replay command quotes the schedule back
+verbatim; and validation is **total** — unknown patterns, missing, extra or
+non-integer fields, out-of-range probabilities and runaway flap counts are all
+usage errors (exit 2) before the first simulator step, never mid-run crashes.
+
+The payoff (`tests/test_nemesis.py`): the injectable-bug registry is re-caught
+when the adversity is *directed* — a hand-authored campaign of minority-starving
+halves splits and leader isolations over `light` noise trips each bug's own
+invariant (and `stale_local_reads` still falls only to the oracle) — and the
+May-2015 membership bug, whose natural repro needed a 1000-seed chaos hunt,
+reproduces under directed 3|3 halves splits at six servers at a pinned seed,
+with the guarded twin surviving the identical campaign.
+
 ## Full Raft: crash-restart, snapshots, linearizable reads
 
 The core is not a toy subset — the hard sections of the paper are here, each behind
@@ -225,7 +261,7 @@ python -m venv .venv
 .venv/Scripts/python.exe -m pip install -e ".[dev]"   # Windows
 # .venv/bin/python -m pip install -e ".[dev]"          # Linux/macOS
 
-python -m pytest -q            # 407 tests (a longer sweep is marked slow)
+python -m pytest -q            # 469 tests (a longer sweep is marked slow)
 python -m mypy harmonia         # clean (strict)
 python -m ruff check .          # clean
 
@@ -263,14 +299,15 @@ harmonia/
   linearizability.py  the client-history oracle (Wing-Gong linearize-and-remove)
   bugs.py             injectable consensus bugs (all off by default)
   shrink.py           ddmin schedule shrinker -> minimal counterexample
+  nemesis.py          declarative fault-schedule vocabulary (hand-authored chaos)
   cluster.py          wires N nodes to the simulated network; client + fault +
-                      membership-churn drivers
+                      membership-churn + nemesis drivers
   timeline.py         SVG timeline renderer (no dependencies)
   report.py           self-contained HTML run report
   cli.py              run / check / replay / report
-tests/                407 tests: unit, scenario, invariant sweeps, oracle, shrinker,
-                      crash-restart, snapshots, ReadIndex, membership, determinism
-                      goldens
+tests/                469 tests: unit, scenario, invariant sweeps, oracle, shrinker,
+                      nemesis, crash-restart, snapshots, ReadIndex, membership,
+                      determinism goldens
 ```
 
 Design rule: `node.py` contains *only* the algorithm — no I/O, no clocks, no
@@ -306,7 +343,6 @@ of FoundationDB, TigerBeetle and Jepsen (no affiliation).
 
 ## Roadmap
 
-- A nemesis vocabulary for hand-authored fault scenarios.
 - Joint-consensus membership (C-old,new) if a second quorum lesson ever earns its
   determinism cost.
 

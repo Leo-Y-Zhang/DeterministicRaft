@@ -1,5 +1,52 @@
 # Changelog
 
+## 1.2.0 - 2026-07-31
+
+The nemesis vocabulary: declarative, hand-authored fault schedules as first-class
+citizens of the existing determinism machinery (Jepsen's nemesis is the inspiration;
+no affiliation).
+
+- **`harmonia/nemesis.py`**: five composable fault patterns (`partition_halves`,
+  `isolate_leader` resolved at fire time, `flapping_link`, `lossy_link`,
+  `crash_node`) as frozen, construction-validated dataclasses pinned to virtual-time
+  instants; a `NemesisSchedule` serializes to a compact JSON form that round-trips
+  exactly. Patterns draw zero randomness of their own, so a scheduled run replays
+  byte-identically and layers deterministically over any fault profile (default and
+  membership golden corpora stay byte-identical, asserted; nemesis configs get their
+  own pinned digests).
+- **Same suppression mask as the random driver**: every injection consumes a
+  `_fire_fault` ordinal, so the ddmin shrinker minimises hand-authored schedules
+  with no parallel mechanism, and `Scenario` carries the schedule through
+  shrink/replay. State-dependent injections with nothing to do (no believed leader,
+  node already down) skip without consuming an ordinal.
+- **CLI `--nemesis JSON` on all four commands**; a violation's printed replay hint
+  quotes the schedule back verbatim and parses back through the real parser to the
+  identical schedule (asserted end-to-end). Validation is total and exits 2 on any
+  bad schedule: unknown patterns, missing/extra fields, non-integer fields (a
+  fractional node id previously escaped as a mid-run KeyError), out-of-range
+  probabilities, and flap cycles above `MAX_FLAP_CYCLES` (10000; each cycle
+  materialises one injection up-front, so a runaway value was a memory DoS).
+- **The bug registry, re-caught under direction** (`tests/test_nemesis.py`): a
+  hand-authored campaign of minority-starving halves splits, leader isolations and
+  a crash over `light` noise (which injects no partitions or crashes of its own)
+  catches `vote_for_stale_candidate` -> LeaderCompleteness, `skip_log_consistency`
+  -> LogMatching/StateMachineSafety, `allow_commit_regression` ->
+  CommitIndexMonotonic, `stale_local_reads` -> the linearizability oracle only, with
+  the unbugged twin clean and linearizable over the same campaign. The May-2015
+  membership bug reproduces under directed 3|3 halves splits at six servers at
+  pinned seed 171 (`drop_config_commit_guard`); the guarded twin survives the
+  identical campaign at seeds 170-172. `drop_commit_term_guard` (Figure 8) is
+  deliberately not searched for under nemesis - no driven search in this repo
+  reliably reproduces the full prior-term overwrite - and stays the deterministic
+  mechanism test in `tests/test_bugs.py`.
+- **Report footer fixed**: the HTML report's replay command now carries
+  `--membership` and `--nemesis` (it previously omitted `--membership` since 1.1.0,
+  and would have omitted `--nemesis`), so pasting it reproduces the documented run,
+  not a fault-free lookalike; the default report golden is byte-identical (pinned).
+- mypy `--strict` made clean again (an uninferable lambda in `cluster.py` was
+  replaced by a typed helper, proven digest-neutral by the pinned golden corpus).
+- 407 -> 469 tests plus the marked slow sweep; ruff and mypy `--strict` clean.
+
 ## 1.1.0 - 2026-07-30
 
 Single-server cluster membership changes (Ongaro dissertation ch. 4), plus the real
