@@ -14,7 +14,10 @@ import pytest
 from _goldens import digest_for, key
 from _goldens import load as load_goldens
 
+from harmonia.bugs import Bugs
 from harmonia.cluster import Cluster
+from harmonia.invariants import InvariantViolation
+from harmonia.linearizability import check
 from harmonia.nemesis import (
     CrashNode,
     FlappingLink,
@@ -298,3 +301,114 @@ class TestSuppressionMaskIntegration:
         b = Cluster(num_nodes=5, seed=11, faults="none", nemesis=FULL_SCHEDULE,
                     suppressed=mask).run(3000)
         assert a.digest == b.digest
+
+
+# -- the bug registry, driven by nemesis schedules ---------------------------------
+
+# The campaign used against the registry: minority-starving halves splits (followers
+# cut off in a minority inflate their terms while their logs go stale -- the exact
+# shape the 5.4.1 election restriction exists for), leader isolations, and one crash.
+# It runs over the "light" profile, which injects message noise (drops, duplicates,
+# delay jitter) but NEVER partitions or crashes on its own -- so every partition,
+# isolation and crash in these runs is the schedule's doing.
+REGISTRY_CAMPAIGN = NemesisSchedule((
+    PartitionHalves(at=800, duration=900),
+    IsolateLeader(at=2200, duration=900),
+    CrashNode(node=1, at=3600, duration=600),
+    PartitionHalves(at=4600, duration=900),
+    IsolateLeader(at=6000, duration=900),
+    PartitionHalves(at=7400, duration=900),
+))
+
+# Aimed at the May-2015 membership bug: at six servers the halves split is exactly the
+# 3|3 geometry a disjoint-majority pair of five-voter configurations needs, so the
+# campaign alternates halves splits with leader isolations for the whole run.
+MAY_2015_CAMPAIGN = NemesisSchedule(tuple(
+    op
+    for start in range(900, 900 + 14 * 2400, 2400)
+    for op in (PartitionHalves(at=start, duration=1000),
+               IsolateLeader(at=start + 1400, duration=700))
+))
+
+
+def first_violation(bugs, nodes, seeds, steps=9000):
+    """(seed, invariant) for the first campaign-driven run tripping a safety invariant."""
+    for seed in seeds:
+        try:
+            Cluster(num_nodes=nodes, seed=seed, faults="light", bugs=bugs,
+                    nemesis=REGISTRY_CAMPAIGN).run(steps)
+        except InvariantViolation as v:
+            return seed, v.invariant
+    return None, None
+
+
+def first_nonlinearizable(bugs, nodes, seeds, steps=9000):
+    """The first seed whose campaign-driven history the oracle rejects."""
+    for seed in seeds:
+        try:
+            c = Cluster(num_nodes=nodes, seed=seed, faults="light", bugs=bugs,
+                        nemesis=REGISTRY_CAMPAIGN)
+            c.run(steps)
+        except InvariantViolation:
+            continue
+        if not check(c.history).linearizable:
+            return seed
+    return None
+
+
+class TestBugRegistryDrivenByNemesis:
+    """The injectable-bug registry (harmonia/bugs.py) must still catch its bugs when the
+    adversity is DIRECTED by a hand-authored campaign instead of explored by random
+    chaos -- same bounded-search idiom as tests/test_bugs.py, same properties caught.
+    One deliberate exception: drop_commit_term_guard (Figure 8) is not searched for
+    here because no driven search in this repo reliably reproduces the full prior-term
+    overwrite -- random chaos included -- which is exactly why tests/test_bugs.py pins
+    its mechanism deterministically; nothing about nemesis scheduling changes that."""
+
+    def test_vote_for_stale_candidate_breaks_leader_completeness(self):
+        seed, inv = first_violation(Bugs(vote_for_stale_candidate=True), 5, range(10))
+        assert inv == "LeaderCompleteness", f"got {inv} @ {seed}"
+
+    def test_skip_log_consistency_breaks_safety(self):
+        seed, inv = first_violation(Bugs(skip_log_consistency=True), 5, range(20))
+        assert inv in ("LogMatching", "StateMachineSafety"), f"got {inv} @ {seed}"
+
+    def test_allow_commit_regression_breaks_commit_monotonicity(self):
+        seed, inv = first_violation(Bugs(allow_commit_regression=True), 5, range(10))
+        assert inv == "CommitIndexMonotonic", f"got {inv} @ {seed}"
+
+    def test_stale_local_reads_are_caught_by_the_oracle(self):
+        seed = first_nonlinearizable(Bugs(stale_local_reads=True), 3, range(25))
+        assert seed is not None, "oracle failed to catch a stale read in 25 seeds"
+
+    def test_campaign_without_bugs_is_clean_and_linearizable(self):
+        # the campaign itself must not be the failure: unbugged runs over the same
+        # schedule hold every invariant and stay client-linearizable
+        for seed in range(5):
+            c = Cluster(num_nodes=5, seed=seed, faults="light",
+                        nemesis=REGISTRY_CAMPAIGN)
+            c.run(9000)  # no InvariantViolation
+            assert check(c.history).linearizable
+
+    def test_may_2015_membership_bug_reproduces_under_directed_partitions(self):
+        """The registry's rarest natural repro: under random chaos the dissertation-era
+        membership bug needed a 1000-seed hunt (seed 354, tests/test_membership.py).
+        Directing the partitions instead -- repeated 3|3 halves splits at six servers,
+        the exact disjoint-majority geometry -- reproduces the committed-entry loss at
+        seed 171 of a 250-seed search (pinned here; the violation fires at step 5110,
+        with all faults hand-authored and message noise the only randomness)."""
+        c = Cluster(num_nodes=6, seed=171, faults="light", membership=True,
+                    bugs=Bugs(drop_config_commit_guard=True),
+                    nemesis=MAY_2015_CAMPAIGN)
+        with pytest.raises(InvariantViolation) as exc:
+            c.run(6000)
+        assert exc.value.invariant == "LeaderCompleteness"
+        assert c.stats["config_changes"] >= 2   # a configuration-change collision
+        assert c.stats["partitions"] >= 1       # driven by the scheduled splits
+
+    def test_may_2015_guarded_twin_survives_the_same_campaign(self):
+        # the current-term-commit guard (the May-2015 amendment) defuses the very
+        # schedule that kills the unguarded algorithm, at the pinned seed and neighbours
+        for seed in (170, 171, 172):
+            Cluster(num_nodes=6, seed=seed, faults="light", membership=True,
+                    nemesis=MAY_2015_CAMPAIGN).run(6000)  # no InvariantViolation
