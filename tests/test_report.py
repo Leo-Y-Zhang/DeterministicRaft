@@ -1,10 +1,14 @@
 """The self-contained HTML report (harmonia/report.py + the `report` CLI command)."""
 
 import hashlib
+import html as html_module
+import re
+import shlex
 
-from harmonia.cli import main
+from harmonia.cli import build_parser, main
 from harmonia.cluster import Cluster
 from harmonia.linearizability import check
+from harmonia.nemesis import NemesisSchedule
 from harmonia.report import render_report
 from harmonia.timeline import render_timeline
 
@@ -46,3 +50,25 @@ def test_cli_report_writes_a_file(tmp_path):
                  "--steps", "3000", "--out", str(out)])
     assert code == 0
     assert out.read_text(encoding="utf-8").startswith("<!doctype html>")
+
+
+def test_report_replay_command_carries_membership_and_nemesis(tmp_path):
+    """The footer's replay command must reproduce THE RUN THE REPORT DESCRIBES: a report
+    of a membership+nemesis run whose replay line dropped those flags would document one
+    run and replay a fault-free other. Parse the printed command back through the real
+    CLI parser and demand both flags survive."""
+    sched_json = '[{"pattern":"crash_node","node":1,"at":500,"duration":300}]'
+    out = tmp_path / "r.html"
+    code = main(["report", "--nodes", "3", "--seed", "1", "--faults", "none",
+                 "--steps", "2000", "--membership", "--nemesis", sched_json,
+                 "--out", str(out)])
+    assert code == 0
+    page = out.read_text(encoding="utf-8")
+    match = re.search(r"Reproduce this run with\n<code>(.*?)</code>", page, re.DOTALL)
+    assert match, "report footer must contain the replay command"
+    tokens = shlex.split(html_module.unescape(match.group(1)))
+    assert tokens[0] == "harmonia"
+    args = build_parser().parse_args(tokens[1:])
+    assert args.membership is True
+    assert args.nemesis == NemesisSchedule.from_json(sched_json)
+    assert (args.nodes, args.seed, args.faults, args.steps) == (3, 1, "none", 2000)

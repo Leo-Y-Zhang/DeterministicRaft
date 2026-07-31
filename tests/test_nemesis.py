@@ -19,6 +19,7 @@ from harmonia.cluster import Cluster
 from harmonia.invariants import InvariantViolation
 from harmonia.linearizability import check
 from harmonia.nemesis import (
+    MAX_FLAP_CYCLES,
     CrashNode,
     FlappingLink,
     IsolateLeader,
@@ -70,6 +71,38 @@ class TestVocabularyValidation:
             FlappingLink(a=0, b=1, at=0, period=100, cycles=0)
         with pytest.raises(ValueError, match="period"):
             FlappingLink(a=0, b=1, at=0, period=0, cycles=2)
+
+    def test_flapping_cycles_are_bounded(self):
+        # each cycle materialises one injection up-front, so a runaway cycles value is a
+        # validation error, not a multi-gigabyte allocation before the first sim step
+        FlappingLink(a=0, b=1, at=0, period=1, cycles=MAX_FLAP_CYCLES)  # the cap is legal
+        with pytest.raises(ValueError, match="cycles"):
+            FlappingLink(a=0, b=1, at=0, period=1, cycles=MAX_FLAP_CYCLES + 1)
+        with pytest.raises(ValueError, match="cycles"):
+            NemesisSchedule.from_json(
+                '[{"pattern":"flapping_link","a":0,"b":1,"at":0,"period":1,'
+                '"cycles":50000000}]'
+            )
+
+    def test_non_integer_fields_rejected(self):
+        # JSON happily supplies 1.5 or true where an int belongs; a fractional node id
+        # must die in validation, not as a KeyError inside the simulator event loop
+        with pytest.raises(ValueError, match="node must be an integer"):
+            CrashNode(node=1.5, at=100, duration=100)
+        with pytest.raises(ValueError, match="at must be an integer"):
+            PartitionHalves(at=0.5, duration=100)
+        with pytest.raises(ValueError, match="duration must be an integer"):
+            IsolateLeader(at=0, duration=True)  # bool is an int subclass: still rejected
+        with pytest.raises(ValueError, match="a must be an integer"):
+            FlappingLink(a="0", b=1, at=0, period=100, cycles=2)
+        with pytest.raises(ValueError, match="cycles must be an integer"):
+            FlappingLink(a=0, b=1, at=0, period=100, cycles=2.0)
+        with pytest.raises(ValueError, match="drop_p must be a number"):
+            LossyLink(a=0, b=1, at=0, duration=100, drop_p=True)
+        with pytest.raises(ValueError, match="node must be an integer"):
+            NemesisSchedule.from_json(
+                '[{"pattern":"crash_node","node":1.5,"at":100,"duration":100}]'
+            )
 
 
 class TestScheduleExpansion:

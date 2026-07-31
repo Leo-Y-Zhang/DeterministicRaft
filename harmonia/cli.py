@@ -144,7 +144,8 @@ def cmd_report(args: argparse.Namespace) -> int:
                           title=(f"Harmonia seed={result.seed} faults={result.faults} "
                                  f"nodes={result.num_nodes} steps={result.steps}"))
     with open(args.out, "w", encoding="utf-8", newline="\n") as f:
-        f.write(render_report(result, verdict, svg))
+        f.write(render_report(result, verdict, svg,
+                              membership=args.membership, nemesis=args.nemesis))
     print(f"report written: {args.out}  (linearizable={verdict.linearizable}, "
           f"{verdict.checked_ops} ops checked)")
     return EXIT_OK

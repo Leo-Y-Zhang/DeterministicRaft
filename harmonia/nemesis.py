@@ -30,18 +30,34 @@ import json
 from collections.abc import Callable
 from dataclasses import dataclass, fields
 
+# One FlappingLink expands to one Injection PER CYCLE up-front, so cycles is the only
+# field whose size multiplies memory; bound it (10k flaps outlasts any realistic run).
+MAX_FLAP_CYCLES = 10_000
+
 
 def _require(condition: bool, message: str) -> None:
     if not condition:
         raise ValueError(message)
 
 
+def _check_int(value: object, name: str) -> None:
+    """Fields come straight from user JSON, where 1.5 and true are valid values; anything
+    that is not a genuine int (bool is an int subclass -- excluded) is rejected here so a
+    fractional node id fails validation instead of exploding as a KeyError mid-run."""
+    _require(isinstance(value, int) and not isinstance(value, bool),
+             f"{name} must be an integer, got {value!r}")
+
+
 def _check_window(at: int, duration: int) -> None:
+    _check_int(at, "at")
+    _check_int(duration, "duration")
     _require(at >= 0, f"at must be >= 0 ms, got {at}")
     _require(duration >= 1, f"duration must be >= 1 ms, got {duration}")
 
 
 def _check_link(a: int, b: int) -> None:
+    _check_int(a, "a")
+    _check_int(b, "b")
     _require(a >= 0 and b >= 0, f"link node ids must be >= 0, got ({a}, {b})")
     _require(a != b, f"link endpoints must be distinct, got ({a}, {b})")
 
@@ -78,7 +94,9 @@ class FlappingLink:
     """Starting at ``at``, the (undirected) link between ``a`` and ``b`` goes down for
     ``period`` ms, comes back for ``period`` ms, and repeats ``cycles`` times. Each
     down-flap is its OWN suppressible injection, so the shrinker can discover that only
-    one flap of many is load-bearing."""
+    one flap of many is load-bearing. Because each cycle materialises one injection,
+    ``cycles`` is bounded by ``MAX_FLAP_CYCLES`` (a runaway value would otherwise
+    allocate millions of injections before the first simulator step)."""
 
     a: int
     b: int
@@ -88,9 +106,13 @@ class FlappingLink:
 
     def __post_init__(self) -> None:
         _check_link(self.a, self.b)
+        _check_int(self.at, "at")
+        _check_int(self.period, "period")
+        _check_int(self.cycles, "cycles")
         _require(self.at >= 0, f"at must be >= 0 ms, got {self.at}")
         _require(self.period >= 1, f"period must be >= 1 ms, got {self.period}")
-        _require(self.cycles >= 1, f"cycles must be >= 1, got {self.cycles}")
+        _require(1 <= self.cycles <= MAX_FLAP_CYCLES,
+                 f"cycles must be in 1..{MAX_FLAP_CYCLES}, got {self.cycles}")
 
 
 @dataclass(frozen=True)
@@ -109,6 +131,8 @@ class LossyLink:
     def __post_init__(self) -> None:
         _check_link(self.a, self.b)
         _check_window(self.at, self.duration)
+        _require(isinstance(self.drop_p, (int, float)) and not isinstance(self.drop_p, bool),
+                 f"drop_p must be a number, got {self.drop_p!r}")
         _require(0.0 < self.drop_p <= 1.0,
                  f"drop_p must be in (0.0, 1.0], got {self.drop_p}")
 
@@ -124,6 +148,7 @@ class CrashNode:
     duration: int
 
     def __post_init__(self) -> None:
+        _check_int(self.node, "node")
         _require(self.node >= 0, f"node must be >= 0, got {self.node}")
         _check_window(self.at, self.duration)
 
