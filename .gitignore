@@ -20,9 +20,11 @@ venv/
 Thumbs.db
 .DS_Store
 
-# Scratch output (committed timelines live in docs/)
+# Scratch output (committed timelines and showcase reports live in docs/)
 *.svg
 !docs/*.svg
+*.html
+!docs/*.html
 
 # Secrets / credentials (defensive - none should ever exist here)
 .env
