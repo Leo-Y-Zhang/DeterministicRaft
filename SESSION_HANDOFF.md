@@ -1,9 +1,15 @@
-# Session handoff — Harmonia (v1.1.0 SHIPPED: single-server membership)
+# Session handoff — Harmonia (v1.2.0 READY: nemesis vocabulary)
 
-**STATUS: v1.1.0 complete on `main` — single-server membership changes (dissertation
-ch. 4) + the real May-2015 membership bug as the sixth injectable. 407 tests (+1 slow),
-ruff + mypy --strict clean, replay byte-identical, 100-seed chaos sweep clean. Nothing
-pending.** History below records the v1.0.0 "to the max" program.
+**STATUS: v1.2.0 complete on `main`, committed locally, NOT yet pushed/tagged (the
+orchestrator pushes after its verification sweep). Nemesis vocabulary: declarative
+fault schedules (5 patterns, JSON round-trip, CLI `--nemesis` on all four commands)
+through the SAME suppression-mask ordinals as the random driver, bug registry re-caught
+under directed campaigns incl. the May-2015 bug at pinned seed 171. 469 tests (+1
+slow), ruff + mypy --strict clean. Adversarial review closed: fractional-field
+KeyError -> exit 2 (major, fixed), flap-cycles memory DoS -> capped at 10000 (fixed),
+report footer replay command now carries --membership/--nemesis (fixed; default report
+golden byte-identical). Nothing pending in-repo.** History below records the v1.1.0
+membership round and the v1.0.0 "to the max" program.
 
 Program: repo max-upgrades #4 (after Hephaestus, Helios, Daedalus). Spec:
 `docs/superpowers/specs/to-the-max.md` (self-approved). Branch: `feature/to-the-max`.
@@ -135,8 +141,35 @@ Themis; see [[project_repo_max_upgrades]]).
   byte-identical against a fresh regeneration and now linked/embedded from the README.
   Every pasted number re-run live (300-seed sweep line, replay digests, 407+1 counts).
 
+## v1.2.0 round (2026-07-30/31) — nemesis vocabulary, COMPLETE
+- `harmonia/nemesis.py`: PartitionHalves / IsolateLeader (fire-time resolution) /
+  FlappingLink (one suppressible injection PER FLAP) / LossyLink / CrashNode; frozen
+  validated dataclasses, zero own randomness, exact JSON round-trip; injections consume
+  the SAME `_fire_fault` ordinals -> ddmin shrinks hand-authored schedules unchanged
+  (`Scenario.nemesis` threads through `_cluster`/`replay_command`).
+- CLI `--nemesis JSON` on run/check/replay/report; violation replay hints quote the
+  schedule verbatim and parse back to the identical schedule (asserted through the real
+  parser AND executed verbatim in a shell during review).
+- Registry campaign over `light` (message noise only; every partition/crash is the
+  schedule's): all four searchable bugs caught by their own invariant/oracle; May-2015
+  repro at pinned seed 171 under directed 3|3 splits at six servers, guarded twin clean
+  at 170-172. Fig-8 (`drop_commit_term_guard`) deliberately NOT nemesis-searched (no
+  driven search reproduces it; stays the deterministic mechanism test) - documented in
+  the test class docstring.
+- Review hardening (this round's adversarial findings, all closed): `_check_int` on
+  every int field (bool excluded; fractional node id was a mid-run KeyError with exit 1
+  colliding with EXIT_VIOLATION - now exit 2), `MAX_FLAP_CYCLES = 10_000` (50M-cycle
+  schedule allocated 50M injections up-front - now exit 2), report.py footer replay
+  command now carries `--membership` + `--nemesis` via explicit render_report params
+  (default bytes UNCHANGED - report golden still pins the 1.0.0 digest).
+- Docs: README nemesis section + roadmap/count updates; CHANGELOG 1.2.0; version 1.2.0
+  in pyproject + `__init__`. Gate re-run after all changes: 469 passed + 1 slow, ruff
+  clean, mypy --strict clean (14 files).
+
 ## Exact next step
-Nothing pending. v1.1.0 is complete and gate-green on `main`.
+v1.2.0 is gate-green and committed on local `main` (3+ commits ahead of origin).
+NEXT: orchestrator verification sweep, then push + tag v1.2.0. Do not re-open the
+fig-8-under-nemesis question (measured negative: 40-seed campaign hunt found nothing).
 
 ## Verify commands
 ```
