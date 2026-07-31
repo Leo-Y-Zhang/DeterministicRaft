@@ -27,6 +27,7 @@ from .bugs import NO_BUGS, Bugs
 from .cluster import Cluster
 from .invariants import InvariantViolation
 from .linearizability import check
+from .nemesis import NemesisSchedule
 
 
 @dataclass(frozen=True)
@@ -38,19 +39,25 @@ class Scenario:
     bugs: Bugs = NO_BUGS
     suppressed: frozenset[int] = frozenset()
     membership: bool = False
+    # A hand-authored fault schedule (see harmonia/nemesis.py). Its injections consume
+    # the SAME suppression-mask ordinals as the random driver's, so ddmin minimises a
+    # scheduled run unchanged: the schedule is carried, never rewritten.
+    nemesis: NemesisSchedule | None = None
 
     def replay_command(self) -> str:
         return (f"harmonia replay --nodes {self.nodes} --seed {self.seed} "
                 f"--faults {self.faults} --steps {self.steps}"
-                + (" --membership" if self.membership else ""))
+                + (" --membership" if self.membership else "")
+                + (f" --nemesis '{self.nemesis.to_json()}'"
+                   if self.nemesis is not None and self.nemesis.ops else ""))
 
 
 @dataclass
 class Counterexample:
     scenario: Scenario           # the minimal reproducing scenario
     signature: str               # the failure it reproduces (invariant name / "nonlinearizable")
-    fault_events: list[str]      # the partition/crash injections that survived (with heals/resumes)
-    injection_count: int         # partitions + crashes in the minimal run (the fault count)
+    fault_events: list[str]      # the fault injections that survived (with their recoveries)
+    injection_count: int         # injections in the minimal run (the fault count)
     original_fault_count: int
     original_steps: int
 
@@ -87,7 +94,7 @@ def ddmin(elements: Sequence[int], reproduces: Callable[[list[int]], bool]) -> l
 def _cluster(scenario: Scenario) -> Cluster:
     return Cluster(num_nodes=scenario.nodes, seed=scenario.seed, faults=scenario.faults,
                    bugs=scenario.bugs, suppressed=scenario.suppressed,
-                   membership=scenario.membership)
+                   membership=scenario.membership, nemesis=scenario.nemesis)
 
 
 def failure_signature(scenario: Scenario) -> str | None:
@@ -108,12 +115,18 @@ def _fault_count(scenario: Scenario) -> int:
     return cluster.fault_count
 
 
+# Trace kinds that describe fault injections and their recoveries. The first four come
+# from the random driver; the link-level kinds only ever appear in nemesis-scheduled runs.
+_INJECTION_KINDS = ("partition", "crash", "linkdown", "lossy")
+_RECOVERY_KINDS = ("heal", "resume", "linkup", "lossyheal")
+
+
 def _fault_events(scenario: Scenario) -> list[str]:
     cluster = _cluster(scenario)
     with contextlib.suppress(InvariantViolation):
         cluster.run(scenario.steps)
     return [f"{t}ms {kind} {detail}" for t, kind, detail in cluster.events
-            if kind in ("partition", "crash", "heal", "resume")]
+            if kind in _INJECTION_KINDS + _RECOVERY_KINDS]
 
 
 def _min_steps(scenario: Scenario, target: str) -> int:
@@ -154,7 +167,7 @@ def shrink(scenario: Scenario, *, target: str | None = None) -> Counterexample |
     reduced = replace(reduced, steps=_min_steps(reduced, target))
 
     events = _fault_events(reduced)
-    injections = sum(1 for e in events if e.split()[1] in ("partition", "crash"))
+    injections = sum(1 for e in events if e.split()[1] in _INJECTION_KINDS)
     return Counterexample(
         scenario=reduced,
         signature=target,

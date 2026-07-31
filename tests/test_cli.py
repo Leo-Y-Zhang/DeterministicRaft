@@ -1,12 +1,15 @@
 """End-to-end CLI tests, both in-process (fast) and via a real subprocess."""
 
+import shlex
 import subprocess
 import sys
 
 import pytest
 
 from harmonia import __version__
-from harmonia.cli import EXIT_OK, EXIT_USAGE, EXIT_VIOLATION, main
+from harmonia.cli import EXIT_OK, EXIT_USAGE, EXIT_VIOLATION, build_parser, main
+from harmonia.cluster import Cluster
+from harmonia.nemesis import NemesisSchedule
 
 
 def run_cli(*argv):
@@ -66,6 +69,60 @@ class TestMembershipFlag:
                      "--steps", "3000", "--membership"]) == EXIT_OK
         out = capsys.readouterr().out
         assert "replay verified" in out and "byte-identical" in out
+
+
+# One partition and one crash, declaratively; used across the --nemesis tests.
+NEMESIS_JSON = ('[{"pattern":"partition_halves","at":400,"duration":600},'
+                '{"pattern":"crash_node","node":1,"at":1200,"duration":400}]')
+
+
+class TestNemesisFlag:
+    def test_run_nemesis_fires_the_scheduled_faults(self, capsys):
+        # faults=none injects nothing on its own -> both counters are the schedule
+        assert main(["run", "--nodes", "3", "--seed", "1", "--faults", "none",
+                     "--steps", "4000", "--nemesis", NEMESIS_JSON]) == EXIT_OK
+        out = capsys.readouterr().out
+        assert "partitions=1" in out and "crashes=1" in out
+
+    def test_run_nemesis_digest_matches_a_direct_cluster_run(self, capsys):
+        direct = Cluster(num_nodes=3, seed=1, faults="none",
+                         nemesis=NemesisSchedule.from_json(NEMESIS_JSON)).run(4000)
+        main(["run", "--nodes", "3", "--seed", "1", "--faults", "none",
+              "--steps", "4000", "--nemesis", NEMESIS_JSON])
+        out = capsys.readouterr().out
+        assert f"trace digest: sha256:{direct.digest}" in out
+
+    def test_replay_nemesis_is_byte_identical(self, capsys):
+        assert main(["replay", "--seed", "4", "--faults", "light",
+                     "--steps", "3000", "--nemesis", NEMESIS_JSON]) == EXIT_OK
+        out = capsys.readouterr().out
+        assert "replay verified" in out and "byte-identical" in out
+
+    def test_bad_nemesis_json_is_a_usage_error(self):
+        with pytest.raises(SystemExit) as exc:
+            main(["run", "--nemesis", "{nope"])
+        assert exc.value.code == EXIT_USAGE
+
+    def test_unknown_pattern_is_a_usage_error(self):
+        with pytest.raises(SystemExit) as exc:
+            main(["run", "--nemesis", '[{"pattern":"meteor_strike","at":0}]'])
+        assert exc.value.code == EXIT_USAGE
+
+    def test_schedule_naming_a_missing_node_is_a_usage_error(self, capsys):
+        code = main(["run", "--nodes", "3", "--steps", "500", "--nemesis",
+                     '[{"pattern":"crash_node","node":7,"at":100,"duration":100}]'])
+        assert code == EXIT_USAGE
+        assert "n7" in capsys.readouterr().err
+
+    def test_replay_hint_from_a_nemesis_cluster_parses_back(self):
+        """A violation under a nemesis run prints a replay hint carrying --nemesis;
+        that hint must be a valid CLI invocation reconstructing the SAME schedule."""
+        sched = NemesisSchedule.from_json(NEMESIS_JSON)
+        cluster = Cluster(num_nodes=3, seed=1, faults="none", nemesis=sched)
+        tokens = shlex.split(cluster.checker.replay_hint)
+        assert tokens[0] == "harmonia"
+        args = build_parser().parse_args(tokens[1:])
+        assert args.nemesis == sched
 
 
 class TestCheck:
@@ -134,6 +191,12 @@ class TestSubprocess:
         digest = next(line.split("sha256:")[1] for line in run_out.splitlines()
                       if "trace digest" in line)
         assert digest in replay_out
+
+    def test_run_nemesis_subprocess(self):
+        code, out, err = run_cli("run", "--nodes", "3", "--seed", "1", "--faults",
+                                 "none", "--steps", "2000", "--nemesis", NEMESIS_JSON)
+        assert code == 0, err
+        assert "trace digest: sha256:" in out and "partitions=1" in out
 
     def test_version_flag(self):
         code, out, _ = run_cli("--version")

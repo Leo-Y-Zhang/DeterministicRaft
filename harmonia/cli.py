@@ -5,7 +5,10 @@ Commands:
   harmonia check  --seeds 300 --faults chaos [--nodes 5 --steps 5000]
   harmonia replay --seed N [--nodes 5 --faults chaos --steps 20000]
 
-All four commands also take --membership (single-server membership churn mode).
+All four commands also take --membership (single-server membership churn mode) and
+--nemesis JSON (a declarative fault schedule, serialized by NemesisSchedule.to_json;
+see harmonia/nemesis.py). A violation replay hint quotes the schedule back verbatim,
+so a nemesis-driven failure reproduces byte-for-byte from its printed command.
 
 Exit codes:
   0  success (run clean / all invariants held / replay identical)
@@ -23,6 +26,7 @@ from . import __version__
 from .cluster import Cluster, RunResult
 from .invariants import InvariantViolation
 from .linearizability import check
+from .nemesis import NemesisSchedule
 from .report import render_report
 from .timeline import render_timeline
 
@@ -31,9 +35,10 @@ EXIT_VIOLATION = 1
 EXIT_USAGE = 2
 
 
-def _execute(nodes: int, seed: int, faults: str, steps: int,
-             membership: bool = False) -> RunResult:
-    return Cluster(num_nodes=nodes, seed=seed, faults=faults, membership=membership).run(steps)
+def _execute(nodes: int, seed: int, faults: str, steps: int, membership: bool = False,
+             nemesis: NemesisSchedule | None = None) -> RunResult:
+    return Cluster(num_nodes=nodes, seed=seed, faults=faults, membership=membership,
+                   nemesis=nemesis).run(steps)
 
 
 def _print_result(result: RunResult) -> None:
@@ -61,7 +66,8 @@ def cmd_run(args: argparse.Namespace) -> int:
     print(f"harmonia run: nodes={args.nodes} seed={args.seed} "
           f"faults={args.faults} steps={args.steps}")
     try:
-        result = _execute(args.nodes, args.seed, args.faults, args.steps, args.membership)
+        result = _execute(args.nodes, args.seed, args.faults, args.steps, args.membership,
+                          args.nemesis)
     except InvariantViolation as violation:
         print(f"INVARIANT VIOLATION: {violation}")
         return EXIT_VIOLATION
@@ -83,7 +89,8 @@ def cmd_check(args: argparse.Namespace) -> int:
     checks = 0
     for seed in range(args.seeds):
         try:
-            result = _execute(args.nodes, seed, args.faults, args.steps, args.membership)
+            result = _execute(args.nodes, seed, args.faults, args.steps, args.membership,
+                              args.nemesis)
             checks += result.stats["invariant_checks"]
         except InvariantViolation as violation:
             violations.append(violation)
@@ -105,7 +112,7 @@ def cmd_replay(args: argparse.Namespace) -> int:
     for attempt in (1, 2):
         try:
             outcomes.append(_execute(args.nodes, args.seed, args.faults, args.steps,
-                                     args.membership))
+                                     args.membership, args.nemesis))
         except InvariantViolation as violation:
             print(f"attempt {attempt}: INVARIANT VIOLATION: {violation}")
             return EXIT_VIOLATION
@@ -126,7 +133,7 @@ def cmd_report(args: argparse.Namespace) -> int:
     print(f"harmonia report: nodes={args.nodes} seed={args.seed} "
           f"faults={args.faults} steps={args.steps}")
     cluster = Cluster(num_nodes=args.nodes, seed=args.seed, faults=args.faults,
-                      membership=args.membership)
+                      membership=args.membership, nemesis=args.nemesis)
     try:
         result = cluster.run(args.steps)
     except InvariantViolation as violation:
@@ -141,6 +148,14 @@ def cmd_report(args: argparse.Namespace) -> int:
     print(f"report written: {args.out}  (linearizable={verdict.linearizable}, "
           f"{verdict.checked_ops} ops checked)")
     return EXIT_OK
+
+
+def _nemesis_arg(text: str) -> NemesisSchedule:
+    """argparse type for --nemesis: a serialized NemesisSchedule (bad ones exit 2)."""
+    try:
+        return NemesisSchedule.from_json(text)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(str(exc)) from exc
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -161,6 +176,10 @@ def build_parser() -> argparse.ArgumentParser:
         p.add_argument("--membership", action="store_true",
                        help="membership mode: start with one server outside the "
                             "configuration and run deterministic single-server churn")
+        p.add_argument("--nemesis", metavar="JSON", type=_nemesis_arg, default=None,
+                       help="declarative fault schedule to run (JSON list of named "
+                            "patterns; see harmonia/nemesis.py); composes with the "
+                            "fault profile and replays byte-identically")
 
     p_run = sub.add_parser("run", help="run one seeded simulation and print a digest")
     p_run.add_argument("--seed", type=int, default=0)
@@ -193,7 +212,13 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    return cast(int, args.fn(args))
+    try:
+        return cast(int, args.fn(args))
+    except ValueError as exc:
+        # bad argument combinations rejected past argparse (e.g. a schedule naming a
+        # node the cluster does not have) are usage errors, not crashes
+        print(f"harmonia: error: {exc}", file=sys.stderr)
+        return EXIT_USAGE
 
 
 if __name__ == "__main__":
