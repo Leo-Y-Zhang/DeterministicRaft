@@ -21,6 +21,7 @@ from .kv import CAS, GET, PUT, Command, HistoryEntry
 from .nemesis import (
     CrashNode,
     FlappingLink,
+    Injection,
     IsolateLeader,
     LossyLink,
     NemesisOp,
@@ -171,8 +172,7 @@ class Cluster:
             # through _nemesis_fire -> _fire_fault, so hand-authored faults share the
             # random driver's suppression-mask ordinals and the shrinker just works.
             for injection in nemesis.injections():
-                self.sim.schedule(injection.at,
-                                  lambda op=injection.op: self._nemesis_fire(op))
+                self._schedule_injection(injection)
 
     # -- recording ------------------------------------------------------------
 
@@ -329,6 +329,11 @@ class Cluster:
         self.sim.schedule(MEMBERSHIP_INTERVAL, self._membership_tick)
 
     # -- nemesis: declarative fault schedules (see harmonia/nemesis.py) --------
+
+    def _schedule_injection(self, injection: Injection) -> None:
+        """Schedule one expanded injection (the closure binds this call's injection,
+        so a loop over injections cannot late-bind to the last one)."""
+        self.sim.schedule(injection.at, lambda: self._nemesis_fire(injection.op))
 
     def _nemesis_fire(self, op: NemesisOp) -> None:
         """Fire one scheduled injection. State-dependent targets (the believed leader,

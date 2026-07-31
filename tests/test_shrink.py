@@ -7,6 +7,12 @@ smaller reproduction that still trips the SAME failure, deterministically.
 
 from harmonia.bugs import Bugs
 from harmonia.cluster import Cluster
+from harmonia.nemesis import (
+    CrashNode,
+    IsolateLeader,
+    NemesisSchedule,
+    PartitionHalves,
+)
 from harmonia.shrink import Counterexample, Scenario, ddmin, failure_signature, shrink
 
 
@@ -104,6 +110,63 @@ class TestShrinkHistoricalMembershipBug:
         assert failure_signature(ce.scenario) == "LeaderCompleteness"  # still reproduces
         assert ce.scenario.steps <= sc.steps
         assert ce.scenario.replay_command().endswith("--membership")
+
+
+# A hand-authored nemesis campaign over the "light" profile: light injects message noise
+# (drops, dups, jitter) but NEVER partitions or crashes on its own, so every partition,
+# isolation and crash in the run below is the schedule's doing. Seed 0 trips
+# vote_for_stale_candidate against this campaign (bounded search in test_nemesis.py);
+# the violation fires at step 1506, so 2500 steps is a comfortable budget.
+NEMESIS_CAMPAIGN = NemesisSchedule((
+    PartitionHalves(at=800, duration=900),
+    IsolateLeader(at=2200, duration=900),
+    CrashNode(node=1, at=3600, duration=600),
+    PartitionHalves(at=4600, duration=900),
+    IsolateLeader(at=6000, duration=900),
+    PartitionHalves(at=7400, duration=900),
+))
+NEMESIS_SCENARIO = Scenario(nodes=5, seed=0, faults="light", steps=2500,
+                            bugs=Bugs(vote_for_stale_candidate=True),
+                            nemesis=NEMESIS_CAMPAIGN)
+
+
+class TestShrinkNemesisSchedule:
+    """Hand-authored schedules are shrunk by the SAME ddmin machinery: every nemesis
+    injection consumes a suppression-mask ordinal (see cluster.py), so a Scenario that
+    carries a schedule delta-debugs with no nemesis-specific code paths."""
+
+    def test_shrinks_a_nemesis_driven_failure_to_the_same_signature(self):
+        ce = shrink(NEMESIS_SCENARIO)
+        assert isinstance(ce, Counterexample)
+        assert ce.signature == "LeaderCompleteness"
+        assert failure_signature(ce.scenario) == ce.signature  # still reproduces
+        # shrinking suppresses injections; the schedule itself is never rewritten
+        assert ce.scenario.nemesis == NEMESIS_CAMPAIGN
+
+    def test_reduction_does_not_grow_the_problem(self):
+        ce = shrink(NEMESIS_SCENARIO)
+        assert ce.scenario.steps <= NEMESIS_SCENARIO.steps
+        assert ce.injection_count <= ce.original_fault_count
+        # at least one dimension was actually reduced
+        assert ce.scenario.steps < NEMESIS_SCENARIO.steps or ce.scenario.suppressed
+
+    def test_is_deterministic(self):
+        a = shrink(NEMESIS_SCENARIO)
+        b = shrink(NEMESIS_SCENARIO)
+        assert a.scenario == b.scenario
+        assert a.injection_count == b.injection_count
+
+    def test_replay_command_carries_the_serialized_schedule(self):
+        cmd = shrink(NEMESIS_SCENARIO).scenario.replay_command()
+        assert "--nemesis" in cmd
+        # the embedded serialized form round-trips to the exact schedule
+        payload = cmd.split("--nemesis '", 1)[1].rstrip("'")
+        assert NemesisSchedule.from_json(payload) == NEMESIS_CAMPAIGN
+
+    def test_plain_scenario_replay_command_has_no_nemesis_flag(self):
+        assert "--nemesis" not in BUG_SCENARIO.replay_command()
+        assert "--nemesis" not in Scenario(nodes=5, seed=1, faults="chaos", steps=100,
+                                           nemesis=NemesisSchedule()).replay_command()
 
 
 class TestShrinkHealthy:
