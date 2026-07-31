@@ -114,6 +114,23 @@ class TestNemesisFlag:
         assert code == EXIT_USAGE
         assert "n7" in capsys.readouterr().err
 
+    def test_fractional_node_id_is_a_usage_error(self):
+        # 1.5 satisfies node >= 0 and 1.5 < 3, but there is no node 1.5: it must be
+        # rejected in validation (exit 2), never surface as a KeyError mid-run (exit 1)
+        with pytest.raises(SystemExit) as exc:
+            main(["run", "--nodes", "3", "--steps", "500", "--nemesis",
+                  '[{"pattern":"crash_node","node":1.5,"at":100,"duration":100}]'])
+        assert exc.value.code == EXIT_USAGE
+
+    def test_runaway_flapping_cycles_is_a_usage_error(self):
+        # 50 million cycles would materialise 50 million injections before step one;
+        # the cycles cap turns that into an instant usage error instead of a hang
+        with pytest.raises(SystemExit) as exc:
+            main(["run", "--nodes", "3", "--steps", "500", "--nemesis",
+                  '[{"pattern":"flapping_link","a":0,"b":1,"at":0,"period":1,'
+                  '"cycles":50000000}]'])
+        assert exc.value.code == EXIT_USAGE
+
     def test_replay_hint_from_a_nemesis_cluster_parses_back(self):
         """A violation under a nemesis run prints a replay hint carrying --nemesis;
         that hint must be a valid CLI invocation reconstructing the SAME schedule."""
