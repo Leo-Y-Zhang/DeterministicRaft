@@ -10,12 +10,12 @@ tests/test_shrink.py; only its registry membership is asserted here.
 
 import pytest
 
-from harmonia.bugs import NO_BUGS, Bugs
-from harmonia.cluster import Cluster
-from harmonia.invariants import InvariantViolation
-from harmonia.linearizability import check
-from harmonia.node import AppendReply, Entry, RaftNode
-from harmonia.sim import Simulator
+from raftverified.bugs import NO_BUGS, Bugs
+from raftverified.cluster import Cluster
+from raftverified.invariants import InvariantViolation
+from raftverified.linearizability import check
+from raftverified.node import AppendReply, Entry, RaftNode
+from raftverified.sim import Simulator
 
 
 def _leader(log, bugs):

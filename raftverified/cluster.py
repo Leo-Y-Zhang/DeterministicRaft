@@ -141,7 +141,7 @@ class Cluster:
         self._nemesis = nemesis
         self.checker = InvariantChecker(
             seed,
-            replay_hint=(f"harmonia replay --nodes {num_nodes} --seed {seed} "
+            replay_hint=(f"raftverified replay --nodes {num_nodes} --seed {seed} "
                          f"--faults {faults}" + (" --membership" if membership else "")
                          + (f" --nemesis '{nemesis.to_json()}'"
                             if nemesis is not None and nemesis.ops else "")),
@@ -328,7 +328,7 @@ class Cluster:
                 self._member_turn += 1
         self.sim.schedule(MEMBERSHIP_INTERVAL, self._membership_tick)
 
-    # -- nemesis: declarative fault schedules (see harmonia/nemesis.py) --------
+    # -- nemesis: declarative fault schedules (see raftverified/nemesis.py) --------
 
     def _schedule_injection(self, injection: Injection) -> None:
         """Schedule one expanded injection (the closure binds this call's injection,

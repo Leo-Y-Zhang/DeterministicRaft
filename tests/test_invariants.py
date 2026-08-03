@@ -5,9 +5,9 @@ Fake nodes exercise each detector; real cluster runs prove healthy histories pas
 
 import pytest
 
-from harmonia.cluster import Cluster
-from harmonia.invariants import InvariantChecker, InvariantViolation
-from harmonia.node import FOLLOWER, LEADER, Entry
+from raftverified.cluster import Cluster
+from raftverified.invariants import InvariantChecker, InvariantViolation
+from raftverified.node import FOLLOWER, LEADER, Entry
 
 
 class FakeNode:
@@ -31,7 +31,7 @@ class FakeNode:
         self.log = [Entry(*e) for e in log]
         self.log_version += 1
 
-    # logical accessors mirroring RaftNode (see harmonia/node.py)
+    # logical accessors mirroring RaftNode (see raftverified/node.py)
     def last_log_index(self):
         return self.base_index + len(self.log)
 
@@ -210,13 +210,13 @@ class TestViolationErgonomics:
 
     def test_violation_includes_replay_command(self):
         checker = InvariantChecker(
-            seed=9, replay_hint="harmonia replay --nodes 5 --seed 9 --faults chaos"
+            seed=9, replay_hint="raftverified replay --nodes 5 --seed 9 --faults chaos"
         )
         a = FakeNode(0, role=LEADER, term=3)
         b = FakeNode(1, role=LEADER, term=3)
         with pytest.raises(InvariantViolation) as exc:
             checker.check({0: a, 1: b}, 5)
-        assert "harmonia replay --nodes 5 --seed 9 --faults chaos" in str(exc.value)
+        assert "raftverified replay --nodes 5 --seed 9 --faults chaos" in str(exc.value)
 
     def test_checker_runs_after_every_step(self):
         c = Cluster(num_nodes=3, seed=50, faults="light")

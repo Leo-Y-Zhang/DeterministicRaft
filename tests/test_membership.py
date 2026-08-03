@@ -18,12 +18,12 @@ from _goldens import digest_for, key
 from _goldens import load as load_goldens
 from test_invariants import FakeNode
 
-from harmonia.bugs import NO_BUGS, Bugs
-from harmonia.cluster import Cluster
-from harmonia.invariants import InvariantChecker, InvariantViolation
-from harmonia.kv import PUT, Command
-from harmonia.linearizability import check
-from harmonia.node import (
+from raftverified.bugs import NO_BUGS, Bugs
+from raftverified.cluster import Cluster
+from raftverified.invariants import InvariantChecker, InvariantViolation
+from raftverified.kv import PUT, Command
+from raftverified.linearizability import check
+from raftverified.node import (
     CANDIDATE,
     FOLLOWER,
     LEADER,
@@ -38,7 +38,7 @@ from harmonia.node import (
     decode_config,
     encode_config,
 )
-from harmonia.sim import Simulator
+from raftverified.sim import Simulator
 
 
 def make_node(node_id=0, n=5, initial_voters=None, term=0, config=None):

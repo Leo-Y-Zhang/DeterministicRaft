@@ -1,4 +1,4 @@
-"""The nemesis vocabulary: declarative, replayable fault schedules (harmonia/nemesis.py).
+"""The nemesis vocabulary: declarative, replayable fault schedules (raftverified/nemesis.py).
 
 The random fault driver explores; a nemesis DIRECTS. These tests pin the vocabulary's
 whole contract: patterns are validated pure data; a schedule serializes to JSON and
@@ -14,11 +14,11 @@ import pytest
 from _goldens import digest_for, key
 from _goldens import load as load_goldens
 
-from harmonia.bugs import Bugs
-from harmonia.cluster import Cluster
-from harmonia.invariants import InvariantViolation
-from harmonia.linearizability import check
-from harmonia.nemesis import (
+from raftverified.bugs import Bugs
+from raftverified.cluster import Cluster
+from raftverified.invariants import InvariantViolation
+from raftverified.linearizability import check
+from raftverified.nemesis import (
     MAX_FLAP_CYCLES,
     CrashNode,
     FlappingLink,
@@ -390,7 +390,7 @@ def first_nonlinearizable(bugs, nodes, seeds, steps=9000):
 
 
 class TestBugRegistryDrivenByNemesis:
-    """The injectable-bug registry (harmonia/bugs.py) must still catch its bugs when the
+    """The injectable-bug registry (raftverified/bugs.py) must still catch its bugs when the
     adversity is DIRECTED by a hand-authored campaign instead of explored by random
     chaos -- same bounded-search idiom as tests/test_bugs.py, same properties caught.
     One deliberate exception: drop_commit_term_guard (Figure 8) is not searched for

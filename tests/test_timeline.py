@@ -2,8 +2,8 @@
 
 import xml.etree.ElementTree as ET
 
-from harmonia.cluster import Cluster
-from harmonia.timeline import PALETTE, render_timeline, term_color
+from raftverified.cluster import Cluster
+from raftverified.timeline import PALETTE, render_timeline, term_color
 
 
 def chaos_result(seed=3, steps=4000):

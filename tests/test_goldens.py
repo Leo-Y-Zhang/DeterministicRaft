@@ -1,6 +1,6 @@
 """The determinism tripwire tests (see tests/_goldens.py for the corpus + rationale).
 
-If a change to Harmonia moves ANY pinned digest or rng-draw count, one of these fails.
+If a change to RaftVerified moves ANY pinned digest or rng-draw count, one of these fails.
 That is the point: a determinism-neutral change must leave every golden untouched, and
 an intentional behaviour change must be accompanied by a reviewed regeneration of
 tests/goldens.json (``.venv/Scripts/python.exe tests/_goldens.py``).
@@ -57,12 +57,12 @@ def test_counting_instrument_does_not_perturb_the_stream() -> None:
     """
     from unittest import mock
 
-    from harmonia.cluster import Cluster
+    from raftverified.cluster import Cluster
 
     for cfg in [(5, 7, "chaos", 3000), (3, 2, "light", 2000)]:
         nodes, seed, faults, steps = cfg
         plain = Cluster(num_nodes=nodes, seed=seed, faults=faults).run(steps).digest
-        with mock.patch("harmonia.sim.random.Random", CountingRandom):
+        with mock.patch("raftverified.sim.random.Random", CountingRandom):
             counted = Cluster(num_nodes=nodes, seed=seed, faults=faults).run(steps).digest
         assert counted == plain
 

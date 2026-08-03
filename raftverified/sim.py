@@ -1,6 +1,6 @@
 """Discrete-event simulator: virtual clock, priority event queue, seeded RNG, faulty network.
 
-Everything that happens in a Harmonia run flows through this module. The simulator owns
+Everything that happens in a RaftVerified run flows through this module. The simulator owns
 a single seeded random.Random instance; every source of nondeterminism (message delays,
 drops, duplicates, election timeouts, fault injection) draws from that one stream in a
 deterministic order, so the same seed always reproduces the exact same run.
@@ -133,7 +133,7 @@ class Network:
     def reachable(self, a: int, b: int) -> bool:
         return self._group[a] == self._group[b] and frozenset((a, b)) not in self.down_links
 
-    # -- link faults (undirected; see harmonia/nemesis.py) --------------------
+    # -- link faults (undirected; see raftverified/nemesis.py) --------------------
 
     def set_link_down(self, a: int, b: int) -> None:
         self.down_links.add(frozenset((a, b)))

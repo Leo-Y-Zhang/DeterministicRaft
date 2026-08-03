@@ -5,7 +5,7 @@ The random fault driver EXPLORES the fault space; a nemesis DIRECTS it. A
 into halves, isolate whoever currently believes it leads, flap or degrade one link,
 crash one node -- each pinned to a virtual-time instant. The vocabulary is deliberately
 Jepsen-shaped (their nemesis process is the inspiration; no affiliation) but keeps
-Harmonia's one non-negotiable: everything is deterministic from the seed.
+RaftVerified's one non-negotiable: everything is deterministic from the seed.
 
 Three properties make schedules first-class citizens of the existing machinery rather
 than a parallel mechanism:

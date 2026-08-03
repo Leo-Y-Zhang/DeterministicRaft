@@ -1,4 +1,4 @@
-"""The client-observed history recorded by a Cluster (harmonia/cluster.py + kv.py).
+"""The client-observed history recorded by a Cluster (raftverified/cluster.py + kv.py).
 
 These tests are the substrate for the linearizability oracle: they establish that the
 history is deterministic, faithfully records invoke/return, and -- in the fault-free case
@@ -6,8 +6,8 @@ history is deterministic, faithfully records invoke/return, and -- in the fault-
 precursor). They also lock the guarantee that recording the history never perturbs a run.
 """
 
-from harmonia.cluster import Cluster
-from harmonia.kv import Command, KVStateMachine
+from raftverified.cluster import Cluster
+from raftverified.kv import Command, KVStateMachine
 
 
 def _completed(history):

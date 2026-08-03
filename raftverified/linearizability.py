@@ -16,7 +16,7 @@ op whose result is legal in the current state, recurse, and memoise dead-end
 (state, remaining) pairs. Concurrency width here is bounded by the number of clients, so
 the search stays small.
 
-Pending (never-returned) operations are EXCLUDED, and this is sound in Harmonia: a history
+Pending (never-returned) operations are EXCLUDED, and this is sound in RaftVerified: a history
 row is completed the instant the op is first applied, so an op that never returned never
 committed and therefore never touched the state machine. Excluding it cannot hide a real
 effect (no completed read could have observed it), so it produces no false positives.

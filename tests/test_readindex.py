@@ -9,13 +9,13 @@ requirement, prove reads are linearizable in the chaos sweep, and keep the naive
 
 import pytest
 
-from harmonia.bugs import Bugs
-from harmonia.cluster import Cluster
-from harmonia.invariants import InvariantViolation
-from harmonia.kv import GET, PUT, Command
-from harmonia.linearizability import check
-from harmonia.node import RaftNode, ReadAck
-from harmonia.sim import Simulator
+from raftverified.bugs import Bugs
+from raftverified.cluster import Cluster
+from raftverified.invariants import InvariantViolation
+from raftverified.kv import GET, PUT, Command
+from raftverified.linearizability import check
+from raftverified.node import RaftNode, ReadAck
+from raftverified.sim import Simulator
 
 
 def _leader(store=None):

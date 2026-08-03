@@ -44,7 +44,7 @@ def render_timeline(
     events: list[tuple[int, str, str]],
     num_nodes: int,
     duration: int,
-    title: str = "Harmonia run",
+    title: str = "RaftVerified run",
 ) -> str:
     """Render the recorded events of one run as an SVG string."""
     duration = max(duration, 1)

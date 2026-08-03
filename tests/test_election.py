@@ -1,7 +1,7 @@
 """Leader election tests: clean elections, split votes, partitions, crashes."""
 
-from harmonia.cluster import Cluster
-from harmonia.node import FOLLOWER, LEADER
+from raftverified.cluster import Cluster
+from raftverified.node import FOLLOWER, LEADER
 
 
 def has_leader(c):

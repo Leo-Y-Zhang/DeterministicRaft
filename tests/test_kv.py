@@ -1,6 +1,6 @@
-"""Unit tests for the KV state machine and its structured commands (harmonia/kv.py)."""
+"""Unit tests for the KV state machine and its structured commands (raftverified/kv.py)."""
 
-from harmonia.kv import CAS, GET, NOOP, PUT, Command, HistoryEntry, KVStateMachine
+from raftverified.kv import CAS, GET, NOOP, PUT, Command, HistoryEntry, KVStateMachine
 
 
 class TestCommandCodec:

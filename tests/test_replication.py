@@ -1,7 +1,7 @@
 """Log replication tests: commits, repair after divergence, nextIndex backoff."""
 
-from harmonia.cluster import Cluster
-from harmonia.node import FOLLOWER, LEADER
+from raftverified.cluster import Cluster
+from raftverified.node import FOLLOWER, LEADER
 
 
 def has_leader(c):
@@ -37,7 +37,7 @@ class TestBasicReplication:
         assert len(prefixes) == 1
 
     def test_commands_apply_in_submission_order(self):
-        from harmonia.kv import Command
+        from raftverified.kv import Command
         c = elected(seed=23)
         c.run_until(lambda c: all(len(n.applied) >= 5 for n in c.nodes.values()), 60_000)
         cmds = [Command.decode(s) for s in c.nodes[0].applied]
@@ -150,7 +150,7 @@ class TestDivergenceAndRepair:
 
     def test_logs_converge_after_chaos(self):
         """After a chaos run, stop the faults, heal everything, verify convergence."""
-        from harmonia.sim import PROFILES
+        from raftverified.sim import PROFILES
         c = Cluster(num_nodes=5, seed=32, faults="chaos")
         c.run(8000)
         c.profile = PROFILES["none"]      # fault driver goes quiet

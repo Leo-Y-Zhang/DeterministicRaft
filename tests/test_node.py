@@ -1,6 +1,6 @@
 """Unit tests for the RaftNode RPC handlers, driven directly with constructed messages."""
 
-from harmonia.node import (
+from raftverified.node import (
     CANDIDATE,
     FOLLOWER,
     LEADER,
@@ -12,7 +12,7 @@ from harmonia.node import (
     RequestVote,
     VoteReply,
 )
-from harmonia.sim import Simulator
+from raftverified.sim import Simulator
 
 
 def make_node(node_id=0, n=3, term=0, log=(), seed=1):

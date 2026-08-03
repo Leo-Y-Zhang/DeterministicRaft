@@ -39,13 +39,13 @@ class Scenario:
     bugs: Bugs = NO_BUGS
     suppressed: frozenset[int] = frozenset()
     membership: bool = False
-    # A hand-authored fault schedule (see harmonia/nemesis.py). Its injections consume
+    # A hand-authored fault schedule (see raftverified/nemesis.py). Its injections consume
     # the SAME suppression-mask ordinals as the random driver's, so ddmin minimises a
     # scheduled run unchanged: the schedule is carried, never rewritten.
     nemesis: NemesisSchedule | None = None
 
     def replay_command(self) -> str:
-        return (f"harmonia replay --nodes {self.nodes} --seed {self.seed} "
+        return (f"raftverified replay --nodes {self.nodes} --seed {self.seed} "
                 f"--faults {self.faults} --steps {self.steps}"
                 + (" --membership" if self.membership else "")
                 + (f" --nemesis '{self.nemesis.to_json()}'"

@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="1100" height="392" viewBox="0 0 1100 392" font-family="monospace">
 <rect width="1100" height="392" fill="#ffffff"/>
-<text x="70" y="20" font-size="14" fill="#111">Harmonia seed=42 faults=chaos nodes=5 steps=20000</text>
+<text x="70" y="20" font-size="14" fill="#111">RaftVerified seed=42 faults=chaos nodes=5 steps=20000</text>
 <rect x="96.3" y="50" width="8.4" height="246" fill="#e15759" opacity="0.10"/>
 <text x="98.3" y="46" font-size="9" fill="#e15759">partition</text>
 <rect x="108.2" y="50" width="8.4" height="246" fill="#e15759" opacity="0.10"/>

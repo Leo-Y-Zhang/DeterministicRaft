@@ -1,4 +1,4 @@
-"""The log base-offset abstraction (harmonia/node.py).
+"""The log base-offset abstraction (raftverified/node.py).
 
 All log indexing goes through helpers carrying a base_index so a future snapshot can
 compact a prefix. This step ships with base_index == 0, so the helpers must behave exactly
@@ -8,8 +8,8 @@ whole correctness argument for the refactor.
 
 import random
 
-from harmonia.node import Entry, RaftNode
-from harmonia.sim import Simulator
+from raftverified.node import Entry, RaftNode
+from raftverified.sim import Simulator
 
 
 def _node(log):

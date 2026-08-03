@@ -1,4 +1,4 @@
-"""Isolation tests for the linearizability oracle (harmonia/linearizability.py).
+"""Isolation tests for the linearizability oracle (raftverified/linearizability.py).
 
 Hand-built histories with known verdicts, checked BEFORE the oracle is ever pointed at a
 real cluster -- so a checker bug can't hide behind a (possibly also buggy) run. Real-time
@@ -6,9 +6,9 @@ intervals are given as (invoke_step, return_step); ops with disjoint intervals a
 by real time, overlapping ops may be linearized either way.
 """
 
-from harmonia.cluster import Cluster
-from harmonia.kv import CAS, GET, PUT, HistoryEntry
-from harmonia.linearizability import check
+from raftverified.cluster import Cluster
+from raftverified.kv import CAS, GET, PUT, HistoryEntry
+from raftverified.linearizability import check
 
 _counter = [0]
 

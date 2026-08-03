@@ -1,13 +1,13 @@
-"""Harmonia command-line interface.
+"""RaftVerified command-line interface.
 
 Commands:
-  harmonia run    --nodes 5 --seed 42 --faults chaos --steps 20000 [--timeline out.svg]
-  harmonia check  --seeds 300 --faults chaos [--nodes 5 --steps 5000]
-  harmonia replay --seed N [--nodes 5 --faults chaos --steps 20000]
+  raftverified run    --nodes 5 --seed 42 --faults chaos --steps 20000 [--timeline out.svg]
+  raftverified check  --seeds 300 --faults chaos [--nodes 5 --steps 5000]
+  raftverified replay --seed N [--nodes 5 --faults chaos --steps 20000]
 
 All four commands also take --membership (single-server membership churn mode) and
 --nemesis JSON (a declarative fault schedule, serialized by NemesisSchedule.to_json;
-see harmonia/nemesis.py). A violation replay hint quotes the schedule back verbatim,
+see raftverified/nemesis.py). A violation replay hint quotes the schedule back verbatim,
 so a nemesis-driven failure reproduces byte-for-byte from its printed command.
 
 Exit codes:
@@ -63,7 +63,7 @@ def _print_result(result: RunResult) -> None:
 
 
 def cmd_run(args: argparse.Namespace) -> int:
-    print(f"harmonia run: nodes={args.nodes} seed={args.seed} "
+    print(f"raftverified run: nodes={args.nodes} seed={args.seed} "
           f"faults={args.faults} steps={args.steps}")
     try:
         result = _execute(args.nodes, args.seed, args.faults, args.steps, args.membership,
@@ -74,7 +74,7 @@ def cmd_run(args: argparse.Namespace) -> int:
     _print_result(result)
     if args.timeline:
         svg = render_timeline(result.events, result.num_nodes, result.virtual_time,
-                              title=(f"Harmonia seed={result.seed} faults={result.faults} "
+                              title=(f"RaftVerified seed={result.seed} faults={result.faults} "
                                      f"nodes={result.num_nodes} steps={result.steps}"))
         with open(args.timeline, "w", encoding="utf-8", newline="\n") as f:
             f.write(svg)
@@ -83,7 +83,7 @@ def cmd_run(args: argparse.Namespace) -> int:
 
 
 def cmd_check(args: argparse.Namespace) -> int:
-    print(f"harmonia check: seeds 0..{args.seeds - 1} nodes={args.nodes} "
+    print(f"raftverified check: seeds 0..{args.seeds - 1} nodes={args.nodes} "
           f"faults={args.faults} steps={args.steps}")
     violations: list[InvariantViolation] = []
     checks = 0
@@ -106,7 +106,7 @@ def cmd_check(args: argparse.Namespace) -> int:
 
 def cmd_replay(args: argparse.Namespace) -> int:
     """Run the same configuration twice and prove the traces are byte-identical."""
-    print(f"harmonia replay: nodes={args.nodes} seed={args.seed} "
+    print(f"raftverified replay: nodes={args.nodes} seed={args.seed} "
           f"faults={args.faults} steps={args.steps}")
     outcomes = []
     for attempt in (1, 2):
@@ -120,7 +120,7 @@ def cmd_replay(args: argparse.Namespace) -> int:
     identical = a.trace == b.trace
     print(f"attempt 1 digest: sha256:{a.digest}")
     print(f"attempt 2 digest: sha256:{b.digest}")
-    if not identical:  # would indicate a determinism bug in Harmonia itself
+    if not identical:  # would indicate a determinism bug in RaftVerified itself
         print("replay FAILED: traces differ")
         return EXIT_VIOLATION
     print(f"replay verified: {len(a.trace)} trace events, byte-identical")
@@ -130,7 +130,7 @@ def cmd_replay(args: argparse.Namespace) -> int:
 
 def cmd_report(args: argparse.Namespace) -> int:
     """Run once and write a self-contained HTML report (summary + timeline + verdict)."""
-    print(f"harmonia report: nodes={args.nodes} seed={args.seed} "
+    print(f"raftverified report: nodes={args.nodes} seed={args.seed} "
           f"faults={args.faults} steps={args.steps}")
     cluster = Cluster(num_nodes=args.nodes, seed=args.seed, faults=args.faults,
                       membership=args.membership, nemesis=args.nemesis)
@@ -141,7 +141,7 @@ def cmd_report(args: argparse.Namespace) -> int:
         return EXIT_VIOLATION
     verdict = check(cluster.history)
     svg = render_timeline(result.events, result.num_nodes, result.virtual_time,
-                          title=(f"Harmonia seed={result.seed} faults={result.faults} "
+                          title=(f"RaftVerified seed={result.seed} faults={result.faults} "
                                  f"nodes={result.num_nodes} steps={result.steps}"))
     with open(args.out, "w", encoding="utf-8", newline="\n") as f:
         f.write(render_report(result, verdict, svg,
@@ -161,11 +161,11 @@ def _nemesis_arg(text: str) -> NemesisSchedule:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        prog="harmonia",
+        prog="raftverified",
         description="Educational Raft verified by deterministic simulation testing.",
         epilog="exit codes: 0 ok, 1 invariant violation, 2 usage error",
     )
-    parser.add_argument("--version", action="version", version=f"harmonia {__version__}")
+    parser.add_argument("--version", action="version", version=f"raftverified {__version__}")
     sub = parser.add_subparsers(dest="command", required=True)
 
     def common(p: argparse.ArgumentParser, steps_default: int) -> None:
@@ -179,7 +179,7 @@ def build_parser() -> argparse.ArgumentParser:
                             "configuration and run deterministic single-server churn")
         p.add_argument("--nemesis", metavar="JSON", type=_nemesis_arg, default=None,
                        help="declarative fault schedule to run (JSON list of named "
-                            "patterns; see harmonia/nemesis.py); composes with the "
+                            "patterns; see raftverified/nemesis.py); composes with the "
                             "fault profile and replays byte-identically")
 
     p_run = sub.add_parser("run", help="run one seeded simulation and print a digest")
@@ -205,8 +205,8 @@ def build_parser() -> argparse.ArgumentParser:
                               help="write a self-contained HTML report of one run")
     p_report.add_argument("--seed", type=int, default=0)
     common(p_report, 20_000)
-    p_report.add_argument("--out", metavar="OUT.HTML", default="harmonia-report.html",
-                          help="output path (default harmonia-report.html)")
+    p_report.add_argument("--out", metavar="OUT.HTML", default="raftverified-report.html",
+                          help="output path (default raftverified-report.html)")
     p_report.set_defaults(fn=cmd_report)
     return parser
 
@@ -218,7 +218,7 @@ def main(argv: list[str] | None = None) -> int:
     except ValueError as exc:
         # bad argument combinations rejected past argparse (e.g. a schedule naming a
         # node the cluster does not have) are usage errors, not crashes
-        print(f"harmonia: error: {exc}", file=sys.stderr)
+        print(f"raftverified: error: {exc}", file=sys.stderr)
         return EXIT_USAGE
 
 

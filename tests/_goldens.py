@@ -1,6 +1,6 @@
-"""Golden-digest corpus: the determinism tripwire that guards Harmonia's core thesis.
+"""Golden-digest corpus: the determinism tripwire that guards RaftVerified's core thesis.
 
-Harmonia's one guarantee is byte-identical replay from a seed. This module pins a
+RaftVerified's one guarantee is byte-identical replay from a seed. This module pins a
 fixed matrix of ``(nodes, seed, faults, steps)`` configs to two frozen values each:
 
   * ``digest``    -- the sha256 of the full recorded trace (the observable behaviour)
@@ -30,7 +30,7 @@ from pathlib import Path
 from typing import Any
 from unittest import mock
 
-from harmonia.cluster import Cluster
+from raftverified.cluster import Cluster
 
 # (nodes, seed, faults, steps) -- spans cluster sizes 1/3/5/7 and all three fault
 # profiles, with enough steps that elections, commits, partitions and crashes all fire.
@@ -62,7 +62,7 @@ class CountingRandom(random.Random):
     ``randint``/``choice`` route through it internally) to keep the base
     ``_randbelow_with_getrandbits`` path -- making the Mersenne-Twister stream, and
     therefore every digest, byte-identical to a plain ``random.Random``. We count only
-    the three public entry points Harmonia actually draws from.
+    the three public entry points RaftVerified actually draws from.
     """
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -100,7 +100,7 @@ def digest_for(cfg: tuple[int, int, str, int]) -> str:
 def rng_calls_for(cfg: tuple[int, int, str, int]) -> int:
     """Run the config with the draw-counting RNG in place and return the total draws."""
     nodes, seed, faults, steps = cfg
-    with mock.patch("harmonia.sim.random.Random", CountingRandom):
+    with mock.patch("raftverified.sim.random.Random", CountingRandom):
         cluster = Cluster(num_nodes=nodes, seed=seed, faults=faults)
         cluster.run(steps)
         rng = cluster.sim.rng

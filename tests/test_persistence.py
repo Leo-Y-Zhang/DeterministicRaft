@@ -6,11 +6,11 @@ pin the persistent/volatile split, the "no double vote after restart" guarantee,
 crash-restart never corrupts state or breaks safety/linearizability under chaos.
 """
 
-from harmonia.cluster import Cluster
-from harmonia.kv import Command, KVStateMachine
-from harmonia.linearizability import check
-from harmonia.node import FOLLOWER, LEADER, Entry, RaftNode, RequestVote, VoteReply
-from harmonia.sim import Simulator
+from raftverified.cluster import Cluster
+from raftverified.kv import Command, KVStateMachine
+from raftverified.linearizability import check
+from raftverified.node import FOLLOWER, LEADER, Entry, RaftNode, RequestVote, VoteReply
+from raftverified.sim import Simulator
 
 
 def make_node(node_id=0, n=3, term=0):

@@ -7,10 +7,10 @@ Two layers, both tested here:
     recomputed result would otherwise differ).
 """
 
-from harmonia.cluster import Cluster
-from harmonia.kv import CAS, GET, PUT, Command, KVStateMachine
-from harmonia.node import Entry, RaftNode
-from harmonia.sim import Simulator
+from raftverified.cluster import Cluster
+from raftverified.kv import CAS, GET, PUT, Command, KVStateMachine
+from raftverified.node import Entry, RaftNode
+from raftverified.sim import Simulator
 
 
 def make_leader(log=(), term=2, node_id=0, n=3):

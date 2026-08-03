@@ -2,7 +2,7 @@
 client commands and the client-observed history that the linearizability oracle checks.
 
 Raft replicates an opaque command log; the *meaning* of those commands is the state
-machine's business. Harmonia's state machine is a small string->string key-value store
+machine's business. RaftVerified's state machine is a small string->string key-value store
 supporting three operations:
 
   * ``put(key, value)``            -> always "ok"

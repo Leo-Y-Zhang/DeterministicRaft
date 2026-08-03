@@ -11,11 +11,11 @@ Two halves:
 import pytest
 from test_invariants import FakeNode
 
-from harmonia.cluster import Cluster
-from harmonia.invariants import InvariantChecker, InvariantViolation
-from harmonia.kv import Command, KVStateMachine
-from harmonia.linearizability import check
-from harmonia.node import LEADER, RaftConfig
+from raftverified.cluster import Cluster
+from raftverified.invariants import InvariantChecker, InvariantViolation
+from raftverified.kv import Command, KVStateMachine
+from raftverified.linearizability import check
+from raftverified.node import LEADER, RaftConfig
 
 SNAP = RaftConfig(snapshot_threshold=10)
 

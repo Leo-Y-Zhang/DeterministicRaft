@@ -6,14 +6,14 @@ import sys
 
 import pytest
 
-from harmonia import __version__
-from harmonia.cli import EXIT_OK, EXIT_USAGE, EXIT_VIOLATION, build_parser, main
-from harmonia.cluster import Cluster
-from harmonia.nemesis import NemesisSchedule
+from raftverified import __version__
+from raftverified.cli import EXIT_OK, EXIT_USAGE, EXIT_VIOLATION, build_parser, main
+from raftverified.cluster import Cluster
+from raftverified.nemesis import NemesisSchedule
 
 
 def run_cli(*argv):
-    proc = subprocess.run([sys.executable, "-m", "harmonia", *argv],
+    proc = subprocess.run([sys.executable, "-m", "raftverified", *argv],
                           capture_output=True, text=True, timeout=300)
     return proc.returncode, proc.stdout, proc.stderr
 
@@ -137,7 +137,7 @@ class TestNemesisFlag:
         sched = NemesisSchedule.from_json(NEMESIS_JSON)
         cluster = Cluster(num_nodes=3, seed=1, faults="none", nemesis=sched)
         tokens = shlex.split(cluster.checker.replay_hint)
-        assert tokens[0] == "harmonia"
+        assert tokens[0] == "raftverified"
         args = build_parser().parse_args(tokens[1:])
         assert args.nemesis == sched
 
@@ -185,7 +185,7 @@ class TestUsageErrors:
 
 
 class TestSubprocess:
-    """Real end-to-end: python -m harmonia in a child process."""
+    """Real end-to-end: python -m raftverified in a child process."""
 
     def test_run_subprocess(self):
         code, out, err = run_cli("run", "--nodes", "3", "--seed", "1",

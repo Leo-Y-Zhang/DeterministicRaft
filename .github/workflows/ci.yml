@@ -32,13 +32,13 @@ jobs:
       - name: Lint (ruff)
         run: python -m ruff check .
       - name: Type check (mypy --strict)
-        run: python -m mypy harmonia
+        run: python -m mypy raftverified
       - name: Test (pytest)
         run: python -m pytest -q
       - name: Invariant sweep (100 chaos seeds)
-        run: python -m harmonia check --seeds 100 --faults chaos
+        run: python -m raftverified check --seeds 100 --faults chaos
       - name: Replay determinism (byte-identical twice)
-        run: python -m harmonia replay --seed 7 --faults chaos --steps 4000
+        run: python -m raftverified replay --seed 7 --faults chaos --steps 4000
 
   gitleaks:
     runs-on: ubuntu-latest

@@ -2,7 +2,7 @@
 
 import pytest
 
-from harmonia.sim import PROFILES, Network, Simulator
+from raftverified.sim import PROFILES, Network, Simulator
 
 
 def make_net(seed=1, profile="none", n=3):
