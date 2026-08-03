@@ -1,8 +1,8 @@
 # RaftVerified — what it has to do, and how you would check
 
-v1.2.0. Reconstructed from the code and from the build spec at
-`docs/superpowers/specs/to-the-max.md`. Every requirement below names the check that
-proves it, so this document can be falsified by running something.
+v1.2.0. Reconstructed from the code and from the original build spec. Every
+requirement below names the check that proves it, so this document can be
+falsified by running something.
 
 See also: [TDD](TDD.md) · [App Flow](APP_FLOW.md) · [Design Brief](DESIGN_BRIEF.md)
 
