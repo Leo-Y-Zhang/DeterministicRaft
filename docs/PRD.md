@@ -83,13 +83,11 @@ Each of these is a command, from a clean clone.
 - A vocabulary for *directed* chaos — the nemesis schedules — as well as random chaos, so
   a specific adversarial story can be written down, replayed and shrunk.
 
-**Won't, this time**
-
-- Joint-consensus (C-old,new) membership. Single-server changes teach the same
-  quorum-overlap lesson with far less determinism surface.
-- Real disk I/O for "stable storage". Modelled in memory.
-- Byzantine faults. Raft assumes non-Byzantine nodes; simulating them would test nothing.
-- Any GUI, web dashboard, gRPC transport, or multi-Raft sharding.
+Deliberately unbuilt, and listed so nobody looks for it: joint-consensus (C-old,new)
+membership, because single-server changes teach the same quorum-overlap lesson with far
+less determinism surface; real disk I/O for "stable storage", which is modelled in memory;
+Byzantine faults, since Raft assumes non-Byzantine nodes and simulating them would test
+nothing; and any GUI, web dashboard, gRPC transport or multi-Raft sharding.
 
 ## Three things this is not
 
@@ -133,9 +131,9 @@ No run in the current corpus reaches the 500,000-state budget, so this has never
 The correct design is a third verdict — `linearizable` / `not linearizable` /
 `undetermined` — with the callers branching on it.
 
-## Rejected
+## The alternatives, and what each would have cost
 
-| Considered | Rejected because |
+| Alternative | What taking it would have cost |
 |---|---|
 | Wall-clock leader leases for reads (§6.4) | A real clock destroys reproducibility, which is the entire premise. Message-driven ReadIndex (§8) gives the same guarantee with no clock. |
 | Hypothesis or another third-party fuzzer | Would add a runtime dependency, and the seeded sweep plus hand-rolled ddmin already *is* the equivalent. Writing the shrinker was also the point. |

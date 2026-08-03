@@ -169,26 +169,6 @@ product name, and the commit proves it by showing that substituting the old name
 the new page reproduces the old digest exactly. Reversing the rename reverses the digest
 the same way — demonstrated by substitution before the re-pin, not assumed.
 
-## Failure modes
-
-| What breaks | Who notices | How we detect it | How we undo it |
-|---|---|---|---|
-| An RNG draw is inserted mid-stream by a new feature | Anyone replaying an old seed; every pinned trace | `tests/test_goldens.py` — digest **and** draw-count mismatch | Move the draw to the end of its sequence; rebaseline only if the change was intended, in its own commit |
-| The invariant checker is not generalised in lockstep with a feature (snapshots' compacted prefix, membership's per-node majorities) | Nobody — this is the dangerous one: it presents as a **false green** | Planted-bug tests with fake nodes (`tests/test_invariants.py`, `tests/test_membership.py`) that must still catch a cross-boundary / cross-configuration divergence | Revert the feature; the checker change ships in the same commit as the feature by rule |
-| A client-visible defect that no log invariant can express (stale read, lost acknowledged write, double-applied retry) | The client, in a real system | The linearizability oracle; `bugs.stale_local_reads` is the standing positive control that must be missed by all five invariants and caught only by the oracle | Fix the read path; the oracle test is the regression |
-| The oracle's search budget (500,000 states) is exhausted | The user, as a bogus "NOT LINEARIZABLE" | Nothing — **known defect**, see below | Raise `budget`, or bound with `max_ops` |
-| A hand-authored nemesis schedule is malformed | The user | Total validation before step 0; exit code 2 with the specific field named | Fix the JSON |
-| A counterexample from an *armed* bug prints a replay command that does not reproduce it | Whoever pastes the command | Nothing — the hint carries `--membership` and `--nemesis` but not the bug flags, which have no CLI representation | Only affects deliberately-injected bugs (test-only); a genuine defect's hint is exact |
-| A shrink run reports a different failure from the original | The user | `shrink()` refuses to proceed unless the scenario's signature matches the target, and returns `None` otherwise | Nothing to undo; the shrinker never mutates the live run |
-
-The known defect in that table, recorded deliberately rather than fixed here:
-`linearizability.check` returns `linearizable=False` for two different situations — a
-genuine counterexample, and an exhausted search budget whose result is *undetermined*.
-`shrink.failure_signature` maps both to the signature `"nonlinearizable"`, so an
-undetermined search would be delta-debugged as if it were a real violation. No
-configuration in the current corpus approaches the budget, so this has never fired. The
-fix is a three-valued verdict, not a bigger budget.
-
 ## What the tests would catch
 
 469 tests across 24 files, plus one long sweep behind the `slow` marker.
@@ -216,7 +196,27 @@ only test that would catch cross-process nondeterminism such as hash-order leaka
 residual risk is currently low, because every set and dict feeding a draw, a message or
 the trace is keyed by `int` or sorted first, but it is not separately proven.
 
-## Build order, as it actually went
+## What breaks, and the one defect left in on purpose
+
+| What breaks | Who notices | How we detect it | How we undo it |
+|---|---|---|---|
+| An RNG draw is inserted mid-stream by a new feature | Anyone replaying an old seed; every pinned trace | `tests/test_goldens.py` — digest **and** draw-count mismatch | Move the draw to the end of its sequence; rebaseline only if the change was intended, in its own commit |
+| The invariant checker is not generalised in lockstep with a feature (snapshots' compacted prefix, membership's per-node majorities) | Nobody — this is the dangerous one: it presents as a **false green** | Planted-bug tests with fake nodes (`tests/test_invariants.py`, `tests/test_membership.py`) that must still catch a cross-boundary / cross-configuration divergence | Revert the feature; the checker change ships in the same commit as the feature by rule |
+| A client-visible defect that no log invariant can express (stale read, lost acknowledged write, double-applied retry) | The client, in a real system | The linearizability oracle; `bugs.stale_local_reads` is the standing positive control that must be missed by all five invariants and caught only by the oracle | Fix the read path; the oracle test is the regression |
+| The oracle's search budget (500,000 states) is exhausted | The user, as a bogus "NOT LINEARIZABLE" | Nothing — **known defect**, see below | Raise `budget`, or bound with `max_ops` |
+| A hand-authored nemesis schedule is malformed | The user | Total validation before step 0; exit code 2 with the specific field named | Fix the JSON |
+| A counterexample from an *armed* bug prints a replay command that does not reproduce it | Whoever pastes the command | Nothing — the hint carries `--membership` and `--nemesis` but not the bug flags, which have no CLI representation | Only affects deliberately-injected bugs (test-only); a genuine defect's hint is exact |
+| A shrink run reports a different failure from the original | The user | `shrink()` refuses to proceed unless the scenario's signature matches the target, and returns `None` otherwise | Nothing to undo; the shrinker never mutates the live run |
+
+The known defect in that table, recorded deliberately rather than fixed here:
+`linearizability.check` returns `linearizable=False` for two different situations — a
+genuine counterexample, and an exhausted search budget whose result is *undetermined*.
+`shrink.failure_signature` maps both to the signature `"nonlinearizable"`, so an
+undetermined search would be delta-debugged as if it were a real violation. No
+configuration in the current corpus approaches the budget, so this has never fired. The
+fix is a three-valued verdict, not a bigger budget.
+
+## The order things landed, and the two rules that fixed it
 
 Determinism tripwire and tooling gate → KV state machine and client history →
 exactly-once sessions → linearizability oracle → injectable-bug registry → ddmin shrinker
