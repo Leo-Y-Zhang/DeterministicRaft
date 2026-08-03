@@ -337,14 +337,28 @@ Deliberately honest about the edges:
 - Liveness is checked only under bounded fault profiles — under sustained chaos,
   Raft correctly prioritizes safety over progress, so no liveness guarantee is
   asserted there.
+- **A single-voter cluster never commits.** `--nodes 1` elects a leader and accepts
+  commands, but the commit rule is only evaluated when an `AppendEntries` reply
+  arrives, and with no peers none ever does. Safety holds (trivially); nothing
+  progresses. Known defect, written up in `docs/APP_FLOW.md`.
 
 Educational / portfolio project; deterministic simulation testing is the inspiration
 of FoundationDB, TigerBeetle and Jepsen (no affiliation).
+
+## Design documents
+
+Written after the fact, from the code rather than from this README:
+[PRD](docs/PRD.md) (problem, scope, rejected alternatives) ·
+[TDD](docs/TDD.md) (architecture as built, the determinism contract, failure modes) ·
+[App Flow](docs/APP_FLOW.md) (the CLI surface, every state, the exit codes) ·
+[Design Brief](docs/DESIGN_BRIEF.md) (the timeline and report, with measured contrast).
 
 ## Roadmap
 
 - Joint-consensus membership (C-old,new) if a second quorum lesson ever earns its
   determinism cost.
+- Evaluate the commit rule after a leader's own append, so a single-voter
+  configuration can make progress.
 
 ## License
 
