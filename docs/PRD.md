@@ -103,6 +103,18 @@ It is sound for the histories it checks and makes no claim beyond them.
 adversarial schedules, each checked exhaustively, each replayable. That distinction is
 stated in the README's Scope & limitations section and is softened nowhere in this repo.
 
+## The alternatives, and what each would have cost
+
+| Alternative | What taking it would have cost |
+|---|---|
+| Wall-clock leader leases for reads (§6.4) | A real clock destroys reproducibility, which is the entire premise. Message-driven ReadIndex (§8) gives the same guarantee with no clock. |
+| Hypothesis or another third-party fuzzer | Would add a runtime dependency, and the seeded sweep plus hand-rolled ddmin already *is* the equivalent. Writing the shrinker was also the point. |
+| Threads or asyncio for the "network" | Destroys determinism outright. A discrete-event queue over a virtual clock gives the same interleavings, reproducibly. |
+| Real files for stable storage | Injects OS-level nondeterminism (fsync ordering, timing) for no correctness gain; crash-restart semantics are modelled exactly without it. |
+| Joint consensus (C-old,new) | Roughly doubles the configuration state space and the determinism surface to teach the same quorum-overlap lesson single-server membership already teaches. Kept on the roadmap, honestly, rather than half-built. |
+| A richer replicated state machine | A KV store with `put`/`get`/`cas` is the smallest state machine on which linearizability is *interesting* — CAS makes retries observable. Anything larger adds surface without adding a lesson. |
+| A web dashboard | The SVG timeline and the standalone HTML report carry the whole visual story with zero dependencies and no server. |
+
 ## What it touches
 
 No personal data: no user, no account, no database, no telemetry, no network. It writes
@@ -131,14 +143,3 @@ No run in the current corpus reaches the 500,000-state budget, so this has never
 The correct design is a third verdict — `linearizable` / `not linearizable` /
 `undetermined` — with the callers branching on it.
 
-## The alternatives, and what each would have cost
-
-| Alternative | What taking it would have cost |
-|---|---|
-| Wall-clock leader leases for reads (§6.4) | A real clock destroys reproducibility, which is the entire premise. Message-driven ReadIndex (§8) gives the same guarantee with no clock. |
-| Hypothesis or another third-party fuzzer | Would add a runtime dependency, and the seeded sweep plus hand-rolled ddmin already *is* the equivalent. Writing the shrinker was also the point. |
-| Threads or asyncio for the "network" | Destroys determinism outright. A discrete-event queue over a virtual clock gives the same interleavings, reproducibly. |
-| Real files for stable storage | Injects OS-level nondeterminism (fsync ordering, timing) for no correctness gain; crash-restart semantics are modelled exactly without it. |
-| Joint consensus (C-old,new) | Roughly doubles the configuration state space and the determinism surface to teach the same quorum-overlap lesson single-server membership already teaches. Kept on the roadmap, honestly, rather than half-built. |
-| A richer replicated state machine | A KV store with `put`/`get`/`cas` is the smallest state machine on which linearizability is *interesting* — CAS makes retries observable. Anything larger adds surface without adding a lesson. |
-| A web dashboard | The SVG timeline and the standalone HTML report carry the whole visual story with zero dependencies and no server. |
