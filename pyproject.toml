@@ -9,7 +9,7 @@ description = "Educational Raft consensus implementation verified by determinist
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Proprietary - All Rights Reserved" }
-authors = [{ name = "GreenPandaTech" }]
+authors = [{ name = "Leo-Y-Zhang" }]
 keywords = ["raft", "consensus", "distributed-systems", "deterministic-simulation", "testing"]
 classifiers = [
     "Development Status :: 5 - Production/Stable",

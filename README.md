@@ -1,8 +1,8 @@
 # RaftVerified - Raft consensus, verified by deterministic simulation testing
 
-[![CI](https://github.com/GreenPandaTech/RaftVerified/actions/workflows/ci.yml/badge.svg)](https://github.com/GreenPandaTech/RaftVerified/actions/workflows/ci.yml)
+[![CI](https://github.com/Leo-Y-Zhang/RaftVerified/actions/workflows/ci.yml/badge.svg)](https://github.com/Leo-Y-Zhang/RaftVerified/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
-Proprietary - All Rights Reserved (c) 2026 GreenPandaTech - portfolio viewing only.
+Proprietary - All Rights Reserved (c) 2026 Leo-Y-Zhang - portfolio viewing only.
 
 A paper-faithful implementation of the Raft consensus algorithm (Ongaro &
 Ousterhout, *In Search of an Understandable Consensus Algorithm*, USENIX ATC
@@ -362,4 +362,4 @@ Written after the fact, from the code rather than from this README:
 
 ## License
 
-Proprietary - All Rights Reserved (c) 2026 GreenPandaTech - portfolio viewing only.
+Proprietary - All Rights Reserved (c) 2026 Leo-Y-Zhang - portfolio viewing only.
