@@ -1,16 +1,16 @@
-"""The self-contained HTML report (raftverified/report.py + the `report` CLI command)."""
+"""The self-contained HTML report (deterministic_raft/report.py + the `report` CLI command)."""
 
 import hashlib
 import html as html_module
 import re
 import shlex
 
-from raftverified.cli import build_parser, main
-from raftverified.cluster import Cluster
-from raftverified.linearizability import check
-from raftverified.nemesis import NemesisSchedule
-from raftverified.report import render_report
-from raftverified.timeline import render_timeline
+from deterministic_raft.cli import build_parser, main
+from deterministic_raft.cluster import Cluster
+from deterministic_raft.linearizability import check
+from deterministic_raft.nemesis import NemesisSchedule
+from deterministic_raft.report import render_report
+from deterministic_raft.timeline import render_timeline
 
 
 def _report(nodes=5, seed=7, faults="chaos", steps=4000, title="t"):
@@ -40,13 +40,17 @@ def test_report_shows_the_linearizability_verdict():
 
 def test_report_golden():
     # pins the exact bytes for a fixed run so any drift in the report is caught.
-    # Re-pinned at the Harmonia -> RaftVerified rename: the page embeds the product
-    # name in its title, heading, footer and replay command. Substituting the old
-    # name back into the new page reproduces the previous pin
-    # (57be19e4a8e8d3f06f9dc5f211657f550981e5017274dcb9d6c673b8392d5604) exactly,
-    # so nothing but the name moved.
+    # Re-pinned twice, both times for a rename and nothing else. The page embeds
+    # the product name in its title, heading, footer and replay command, so a
+    # rename necessarily moves the digest. Each re-pin is justified the same way:
+    # substituting the old name back into the new page must reproduce the previous
+    # pin exactly, which proves the bytes moved only where the name appears.
+    #   Harmonia -> RaftVerified reproduced
+    #     57be19e4a8e8d3f06f9dc5f211657f550981e5017274dcb9d6c673b8392d5604
+    #   RaftVerified -> DeterministicRaft reproduced
+    #     73fae5b2a4bf19e12ab6269aaa92935f848888df4cd29c51be85640d41895a39
     digest = hashlib.sha256(_report().encode()).hexdigest()
-    assert digest == "73fae5b2a4bf19e12ab6269aaa92935f848888df4cd29c51be85640d41895a39"
+    assert digest == "2a2d09d5c3eca3823b9c5dbbf945a9e135421ce8a12a4e76038894fa098aa641"
 
 
 def test_cli_report_writes_a_file(tmp_path):
@@ -72,7 +76,7 @@ def test_report_replay_command_carries_membership_and_nemesis(tmp_path):
     match = re.search(r"Reproduce this run with\n<code>(.*?)</code>", page, re.DOTALL)
     assert match, "report footer must contain the replay command"
     tokens = shlex.split(html_module.unescape(match.group(1)))
-    assert tokens[0] == "raftverified"
+    assert tokens[0] == "deterministic_raft"
     args = build_parser().parse_args(tokens[1:])
     assert args.membership is True
     assert args.nemesis == NemesisSchedule.from_json(sched_json)

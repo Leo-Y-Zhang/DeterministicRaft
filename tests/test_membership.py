@@ -18,12 +18,12 @@ from _goldens import digest_for, key
 from _goldens import load as load_goldens
 from test_invariants import FakeNode
 
-from raftverified.bugs import NO_BUGS, Bugs
-from raftverified.cluster import Cluster
-from raftverified.invariants import InvariantChecker, InvariantViolation
-from raftverified.kv import PUT, Command
-from raftverified.linearizability import check
-from raftverified.node import (
+from deterministic_raft.bugs import NO_BUGS, Bugs
+from deterministic_raft.cluster import Cluster
+from deterministic_raft.invariants import InvariantChecker, InvariantViolation
+from deterministic_raft.kv import PUT, Command
+from deterministic_raft.linearizability import check
+from deterministic_raft.node import (
     CANDIDATE,
     FOLLOWER,
     LEADER,
@@ -38,7 +38,7 @@ from raftverified.node import (
     decode_config,
     encode_config,
 )
-from raftverified.sim import Simulator
+from deterministic_raft.sim import Simulator
 
 
 def make_node(node_id=0, n=5, initial_voters=None, term=0, config=None):

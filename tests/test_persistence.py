@@ -6,11 +6,11 @@ pin the persistent/volatile split, the "no double vote after restart" guarantee,
 crash-restart never corrupts state or breaks safety/linearizability under chaos.
 """
 
-from raftverified.cluster import Cluster
-from raftverified.kv import Command, KVStateMachine
-from raftverified.linearizability import check
-from raftverified.node import FOLLOWER, LEADER, Entry, RaftNode, RequestVote, VoteReply
-from raftverified.sim import Simulator
+from deterministic_raft.cluster import Cluster
+from deterministic_raft.kv import Command, KVStateMachine
+from deterministic_raft.linearizability import check
+from deterministic_raft.node import FOLLOWER, LEADER, Entry, RaftNode, RequestVote, VoteReply
+from deterministic_raft.sim import Simulator
 
 
 def make_node(node_id=0, n=3, term=0):

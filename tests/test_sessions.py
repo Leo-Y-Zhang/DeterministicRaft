@@ -7,10 +7,10 @@ Two layers, both tested here:
     recomputed result would otherwise differ).
 """
 
-from raftverified.cluster import Cluster
-from raftverified.kv import CAS, GET, PUT, Command, KVStateMachine
-from raftverified.node import Entry, RaftNode
-from raftverified.sim import Simulator
+from deterministic_raft.cluster import Cluster
+from deterministic_raft.kv import CAS, GET, PUT, Command, KVStateMachine
+from deterministic_raft.node import Entry, RaftNode
+from deterministic_raft.sim import Simulator
 
 
 def make_leader(log=(), term=2, node_id=0, n=3):

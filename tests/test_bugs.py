@@ -10,12 +10,12 @@ tests/test_shrink.py; only its registry membership is asserted here.
 
 import pytest
 
-from raftverified.bugs import NO_BUGS, Bugs
-from raftverified.cluster import Cluster
-from raftverified.invariants import InvariantViolation
-from raftverified.linearizability import check
-from raftverified.node import AppendReply, Entry, RaftNode
-from raftverified.sim import Simulator
+from deterministic_raft.bugs import NO_BUGS, Bugs
+from deterministic_raft.cluster import Cluster
+from deterministic_raft.invariants import InvariantViolation
+from deterministic_raft.linearizability import check
+from deterministic_raft.node import AppendReply, Entry, RaftNode
+from deterministic_raft.sim import Simulator
 
 
 def _leader(log, bugs):

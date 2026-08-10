@@ -1,8 +1,8 @@
 # Design Brief — the run timeline and the HTML report
 
 Two visual surfaces, both generated, both dependency-free, both pure functions of a run:
-the SVG timeline (`raftverified/timeline.py`, about 200 lines of hand-written SVG) and the
-standalone HTML report (`raftverified/report.py`, inline CSS, inline SVG, no external asset
+the SVG timeline (`deterministic_raft/timeline.py`, about 200 lines of hand-written SVG) and the
+standalone HTML report (`deterministic_raft/report.py`, inline CSS, inline SVG, no external asset
 of any kind). Nothing else has a visual surface; the CLI is deliberately plain text.
 
 Numbers below are measured, not intended. See [PRD.md](PRD.md) and

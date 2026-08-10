@@ -1,4 +1,4 @@
-# RaftVerified — technical design
+# DeterministicRaft — technical design
 
 v1.2.0, written from the code rather than from the README. Every claim names the module
 it lives in; where the code and the marketing disagreed, the code won. Requirements:
@@ -163,7 +163,7 @@ exactly as dangerous as editing an applied migration: it destroys the evidence t
 change was determinism-neutral.
 
 So the repo's rule is that a rebaseline lands in one reviewable commit showing *only* the
-intended configurations moving, with the reason stated. The `Harmonia → RaftVerified`
+intended configurations moving, with the reason stated. The `Harmonia → DeterministicRaft`
 rename is the worked example. The HTML report golden moved because the page embeds the
 product name, and the commit proves it by showing that substituting the old name back into
 the new page reproduces the old digest exactly. Reversing the rename reverses the digest
@@ -191,7 +191,7 @@ incarnation (`tests/test_persistence.py`); empty and single-op histories in the 
 `--nemesis`, or it would document one run and replay another (`tests/test_report.py`).
 
 **Determinism.** Run-twice-compare per feature, the pinned golden matrix, and a real
-subprocess invocation of `python -m raftverified` (`tests/test_cli.py`) — which is also the
+subprocess invocation of `python -m deterministic_raft` (`tests/test_cli.py`) — which is also the
 only test that would catch cross-process nondeterminism such as hash-order leakage. That
 residual risk is currently low, because every set and dict feeding a draw, a message or
 the trace is keyed by `int` or sorted first, but it is not separately proven.

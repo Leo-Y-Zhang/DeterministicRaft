@@ -2,9 +2,21 @@
 
 ## Unreleased
 
+- **Renamed: RaftVerified -> DeterministicRaft.** The package (`raftverified/` ->
+  `deterministic_raft/`), the distribution name and the console script (now
+  `deterministic-raft`) move with it; `raftverified` no longer exists as either a
+  command or an import. The name now states the thing worth knowing - every
+  failure replays exactly from its seed - instead of claiming a verification
+  stronger than simulation testing delivers.
+  No behavioural change: ruff, mypy and all 469 tests pass across the rename. The
+  one digest that moved is the HTML report golden, which embeds the product name
+  in its title, heading, footer and replay command; substituting the old name
+  back into the new page reproduces the previous pin byte for byte, so nothing
+  but the name moved.
+
 - **Renamed: Harmonia -> RaftVerified.** The Python package (`harmonia/` ->
   `raftverified/`), the distribution name, the console script and the CLI's
-  printed prefixes all move with it; the `harmonia` command no longer exists.
+  printed prefixes all moved with it; the `harmonia` command no longer exists.
   Entries below are the original release notes with module paths and command
   names rewritten to the current ones - the code they describe is unchanged.
   No behavioural change: the golden trace digests and rng-draw counts in
@@ -16,7 +28,7 @@ The nemesis vocabulary: declarative, hand-authored fault schedules as first-clas
 citizens of the existing determinism machinery (Jepsen's nemesis is the inspiration;
 no affiliation).
 
-- **`raftverified/nemesis.py`**: five composable fault patterns (`partition_halves`,
+- **`deterministic_raft/nemesis.py`**: five composable fault patterns (`partition_halves`,
   `isolate_leader` resolved at fire time, `flapping_link`, `lossy_link`,
   `crash_node`) as frozen, construction-validated dataclasses pinned to virtual-time
   instants; a `NemesisSchedule` serializes to a compact JSON form that round-trips
@@ -97,14 +109,14 @@ every simulator step) and stays perfectly reproducible from a seed.
 - **Replicated key-value state machine** (`put` / `get` / `cas`) with structured
   commands, per-client **exactly-once sessions** (Ongaro 6.3), and a recorded
   client-operation history.
-- **Linearizability oracle** (`raftverified/linearizability.py`): Wing-Gong
+- **Linearizability oracle** (`deterministic_raft/linearizability.py`): Wing-Gong
   linearize-and-remove over the client history, catching stale reads,
   acknowledged-but-lost writes and double-applied retries that the internal
   invariants cannot express.
-- **Injectable-bug harness** (`raftverified/bugs.py`): five deliberately-planted
+- **Injectable-bug harness** (`deterministic_raft/bugs.py`): five deliberately-planted
   consensus bugs, all off by default, each caught by exactly the property it targets
   (four internal invariants, one only by the oracle) - proof the checker works.
-- **Automatic schedule shrinker** (`raftverified/shrink.py`): ddmin over the fault
+- **Automatic schedule shrinker** (`deterministic_raft/shrink.py`): ddmin over the fault
   injections plus a step-budget binary search, delta-debugging any failure to a
   minimal, replayable counterexample; deterministic fault-suppression mask.
 - **Real crash-restart**: a crash discards all volatile state (only currentTerm,
@@ -115,7 +127,7 @@ every simulator step) and stays perfectly reproducible from a seed.
   lockstep to reason over (compacted prefix + live tail).
 - **ReadIndex linearizable reads** (section 8): a get served from local state only
   after a confirmed heartbeat round and a current-term commit - no log entry.
-- **`raftverified report`**: a self-contained HTML report (summary + timeline + verdict).
+- **`deterministic_raft report`**: a self-contained HTML report (summary + timeline + verdict).
 - Tooling: golden-digest determinism tripwire + rng-draw guard, ruff, mypy `--strict`,
   CI. 151 -> 342 tests, stdlib-only runtime.
 
@@ -135,7 +147,7 @@ Initial release.
 - Bounded liveness check under none/light fault profiles.
 - Hand-rolled SVG timeline renderer (terms, elections, commits,
   partitions per node over virtual time).
-- CLI: raftverified run / check / replay - every run reproducible from its
+- CLI: deterministic_raft run / check / replay - every run reproducible from its
   seed; run --timeline emits a dependency-free SVG timeline.
 - 151 pytest tests plus a marked long sweep; mypy clean; stdlib-only
   runtime.

@@ -1,6 +1,6 @@
-"""Unit tests for the KV state machine and its structured commands (raftverified/kv.py)."""
+"""Unit tests for the KV state machine and its structured commands (deterministic_raft/kv.py)."""
 
-from raftverified.kv import CAS, GET, NOOP, PUT, Command, HistoryEntry, KVStateMachine
+from deterministic_raft.kv import CAS, GET, NOOP, PUT, Command, HistoryEntry, KVStateMachine
 
 
 class TestCommandCodec:

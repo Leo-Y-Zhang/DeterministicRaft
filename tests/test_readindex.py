@@ -9,13 +9,13 @@ requirement, prove reads are linearizable in the chaos sweep, and keep the naive
 
 import pytest
 
-from raftverified.bugs import Bugs
-from raftverified.cluster import Cluster
-from raftverified.invariants import InvariantViolation
-from raftverified.kv import GET, PUT, Command
-from raftverified.linearizability import check
-from raftverified.node import RaftNode, ReadAck
-from raftverified.sim import Simulator
+from deterministic_raft.bugs import Bugs
+from deterministic_raft.cluster import Cluster
+from deterministic_raft.invariants import InvariantViolation
+from deterministic_raft.kv import GET, PUT, Command
+from deterministic_raft.linearizability import check
+from deterministic_raft.node import RaftNode, ReadAck
+from deterministic_raft.sim import Simulator
 
 
 def _leader(store=None):

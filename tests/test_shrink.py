@@ -1,19 +1,19 @@
-"""The automatic schedule shrinker (raftverified/shrink.py, co-crown B).
+"""The automatic schedule shrinker (deterministic_raft/shrink.py, co-crown B).
 
 ddmin is tested in isolation with synthetic predicates (so a shrinker bug can't hide
 behind a real run), then end-to-end: a real injected-bug failure is delta-debugged to a
 smaller reproduction that still trips the SAME failure, deterministically.
 """
 
-from raftverified.bugs import Bugs
-from raftverified.cluster import Cluster
-from raftverified.nemesis import (
+from deterministic_raft.bugs import Bugs
+from deterministic_raft.cluster import Cluster
+from deterministic_raft.nemesis import (
     CrashNode,
     IsolateLeader,
     NemesisSchedule,
     PartitionHalves,
 )
-from raftverified.shrink import Counterexample, Scenario, ddmin, failure_signature, shrink
+from deterministic_raft.shrink import Counterexample, Scenario, ddmin, failure_signature, shrink
 
 
 class TestDdmin:

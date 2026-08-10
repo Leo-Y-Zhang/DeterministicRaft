@@ -8,7 +8,7 @@ raises with its seed for exact replay.
 
 import pytest
 
-from raftverified.cluster import Cluster
+from deterministic_raft.cluster import Cluster
 
 SWEEP_STEPS = 4000
 

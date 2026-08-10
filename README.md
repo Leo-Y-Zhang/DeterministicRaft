@@ -1,6 +1,6 @@
-# RaftVerified - Raft consensus, verified by deterministic simulation testing
+# DeterministicRaft - Raft consensus, verified by deterministic simulation testing
 
-[![CI](https://github.com/Leo-Y-Zhang/RaftVerified/actions/workflows/ci.yml/badge.svg)](https://github.com/Leo-Y-Zhang/RaftVerified/actions/workflows/ci.yml)
+[![CI](https://github.com/Leo-Y-Zhang/DeterministicRaft/actions/workflows/ci.yml/badge.svg)](https://github.com/Leo-Y-Zhang/DeterministicRaft/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
 Proprietary - All Rights Reserved (c) 2026 Leo-Y-Zhang - portfolio viewing only.
 
@@ -19,14 +19,14 @@ and reproduced on demand.
 verified on every step of every seeded run, rather than argued for in prose.*
 
 ```
-$ raftverified check --seeds 300 --faults chaos
-raftverified check: seeds 0..299 nodes=5 faults=chaos steps=5000
+$ deterministic_raft check --seeds 300 --faults chaos
+deterministic_raft check: seeds 0..299 nodes=5 faults=chaos steps=5000
 seeds=300 faults=chaos invariant_checks=1500000 violations=0
 ```
 
 That is 1.5 million invariant checks (300 adversarial network schedules x
 5000 steps) with zero violations. When an invariant *does* fail during
-development, the run prints its seed and step, and `raftverified replay --seed N`
+development, the run prints its seed and step, and `deterministic_raft replay --seed N`
 reproduces the failure byte-for-byte. The technique — deterministic
 simulation testing — is the one FoundationDB and TigerBeetle use for real
 databases (no affiliation; it is the inspiration).
@@ -36,13 +36,13 @@ databases (no affiliation; it is the inspiration).
 Distributed consensus bugs are notoriously hard to reproduce: they live in
 message interleavings that ordinary unit tests never explore. Deterministic
 simulation inverts the problem by making the network schedule an explicit,
-seeded input. RaftVerified is a compact, readable demonstration of that idea
+seeded input. DeterministicRaft is a compact, readable demonstration of that idea
 applied to the most teachable consensus algorithm.
 
 ## What a run looks like
 
 ```
-$ raftverified run --nodes 5 --seed 47 --faults chaos --steps 20000
+$ deterministic_raft run --nodes 5 --seed 47 --faults chaos --steps 20000
 ...
 commands: submitted=129 committed=126 config_changes=0
 invariants: OK (20000 checks, one after every step)
@@ -78,7 +78,7 @@ Pass `--timeline out.svg` to any `run` to emit a dependency-free SVG timeline
 (terms, elections, commits and partitions per node over virtual time):
 
 ```
-raftverified run --nodes 5 --seed 42 --faults chaos --steps 20000 --timeline out.svg
+deterministic_raft run --nodes 5 --seed 42 --faults chaos --steps 20000 --timeline out.svg
 ```
 
 The committed example below is `docs/showcase-timeline.svg`, produced by exactly
@@ -89,7 +89,7 @@ which is the determinism guarantee doing its job:
 
 ## The five safety properties -> checked invariants
 
-All five live in `raftverified/invariants.py` and are evaluated together after
+All five live in `deterministic_raft/invariants.py` and are evaluated together after
 every simulator step by `InvariantChecker`:
 
 | Paper property | Checked by |
@@ -112,10 +112,10 @@ stale leaders, split votes), plus a bounded liveness check: under
 ## Beyond the log: a client-observable linearizability oracle
 
 The five properties above check what nodes' *logs* do. They cannot see whether
-what *clients* observed is a legal single-copy history. RaftVerified's replicated
+what *clients* observed is a legal single-copy history. DeterministicRaft's replicated
 state machine is a small key-value store (`put` / `get` / `cas`) with per-client
 exactly-once sessions, and every run records a client history of
-invoke/return/observed operations. `raftverified/linearizability.py` then decides
+invoke/return/observed operations. `deterministic_raft/linearizability.py` then decides
 whether that history is **linearizable** — whether some total order of the
 operations respects real-time ordering and makes every observed result legal
 (Wing–Gong "linearize and remove", as in Jepsen/Knossos). Raft guarantees it, so
@@ -125,7 +125,7 @@ the internal invariants structurally cannot express.
 
 ## Testing the tester: injectable bugs
 
-A verifier is only trustworthy if it catches real defects, so `raftverified/bugs.py`
+A verifier is only trustworthy if it catches real defects, so `deterministic_raft/bugs.py`
 carries a registry of deliberately-injectable consensus bugs, **all off by
 default** (an armed-with-`NO_BUGS` run is byte-identical to an un-armed one). Each
 is caught by exactly the property it targets:
@@ -151,7 +151,7 @@ mailing list in May 2015: two leaders elected under the same base configuration 
 each install a different single-server change whose majorities do **not** overlap,
 and one of them then overwrites the other's *committed* entries.
 `drop_config_commit_guard` resurrects the algorithm exactly as it stood 2014-2015,
-and RaftVerified catches the loss both ways:
+and DeterministicRaft catches the loss both ways:
 
 - **Mechanism, replayed exactly** (`tests/test_membership.py`): universe `{0..4}`,
   voters `{0,1,2,3}`. `n0` (leader, term 1) starts adding `n4`; concurrently `n1`
@@ -173,7 +173,7 @@ and RaftVerified catches the loss both ways:
 ## Shrinking a failure to a minimal counterexample
 
 A seed that fails somewhere in 20,000 steps with dozens of faults is a haystack.
-`raftverified/shrink.py` delta-debugs it into the needle: given a failing scenario, it
+`deterministic_raft/shrink.py` delta-debugs it into the needle: given a failing scenario, it
 runs [Zeller's ddmin](https://www.st.cs.uni-saarland.de/dd/) over the fault
 injections to a *1-minimal* set (suppressing any one more makes the bug vanish),
 then binary-searches the step budget — each candidate a fresh, mask-driven,
@@ -185,16 +185,16 @@ stream untouched when empty, so an un-shrunk run is bit-for-bit an ordinary one.
 ## Directing the chaos: the nemesis vocabulary
 
 The random fault driver *explores* the fault space; a nemesis *directs* it.
-`raftverified/nemesis.py` is a vocabulary of declarative fault patterns —
+`deterministic_raft/nemesis.py` is a vocabulary of declarative fault patterns —
 `partition_halves`, `isolate_leader` (resolved at fire time against whoever
 currently believes it leads), `flapping_link`, `lossy_link`, `crash_node` —
 composed into a `NemesisSchedule`: pure, validated data pinned to virtual-time
 instants, serialized to a compact JSON form that round-trips exactly. The name
 and the idea are Jepsen's nemesis process (no affiliation); the determinism is
-RaftVerified's. Every command takes `--nemesis`:
+DeterministicRaft's. Every command takes `--nemesis`:
 
 ```bash
-raftverified run --nodes 3 --faults none --steps 4000 --nemesis \
+deterministic_raft run --nodes 3 --faults none --steps 4000 --nemesis \
   '[{"pattern":"partition_halves","at":400,"duration":600},{"pattern":"crash_node","node":1,"at":1200,"duration":400}]'
 ```
 
@@ -262,23 +262,23 @@ python -m venv .venv
 # .venv/bin/python -m pip install -e ".[dev]"          # Linux/macOS
 
 python -m pytest -q              # 469 tests (a longer sweep is marked slow)
-python -m mypy raftverified      # clean (strict)
+python -m mypy deterministic_raft      # clean (strict)
 python -m ruff check .           # clean
 
-raftverified run    --nodes 5 --seed 42 --faults chaos --steps 20000 --timeline out.svg
-raftverified check  --seeds 300 --faults chaos
-raftverified check  --seeds 100 --faults chaos --membership   # + single-server churn
-raftverified replay --seed 42       # identical to run: byte-for-byte event trace
-raftverified report --seed 42 --faults chaos --out report.html   # self-contained HTML
+deterministic_raft run    --nodes 5 --seed 42 --faults chaos --steps 20000 --timeline out.svg
+deterministic_raft check  --seeds 300 --faults chaos
+deterministic_raft check  --seeds 100 --faults chaos --membership   # + single-server churn
+deterministic_raft replay --seed 42       # identical to run: byte-for-byte event trace
+deterministic_raft report --seed 42 --faults chaos --out report.html   # self-contained HTML
 ```
 
-`raftverified report` writes one standalone HTML page — run summary, fault/verification
+`deterministic_raft report` writes one standalone HTML page — run summary, fault/verification
 stats, the inline SVG timeline and the linearizability verdict — the whole run on a
 single shareable artifact. A committed example (the same seed-42 chaos run as the
 timeline above) lives at `docs/showcase-report.html`.
 
-The `raftverified` console script is installed by the editable install; the same
-commands run via `python -m raftverified ...` without it.
+The `deterministic_raft` console script is installed by the editable install; the same
+commands run via `python -m deterministic_raft ...` without it.
 
 Exit codes: `0` success / no violations, `1` invariant violation (with seed
 and step), `2` usage error.
@@ -286,7 +286,7 @@ and step), `2` usage error.
 ## Architecture
 
 ```
-raftverified/
+deterministic_raft/
   sim.py              discrete-event core: virtual clock, event queue, seeded RNG,
                       network faults (drop/duplicate/delay/reorder/partition)
   node.py             the Raft state machine: election, replication, commit rules,
