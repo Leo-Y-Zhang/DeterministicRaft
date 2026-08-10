@@ -2,7 +2,7 @@
 
 import pytest
 
-from raftverified.sim import PROFILES, Network, Simulator
+from deterministic_raft.sim import PROFILES, Network, Simulator
 
 
 def make_net(seed=1, profile="none", n=3):

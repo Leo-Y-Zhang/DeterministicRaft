@@ -4,7 +4,7 @@ Raft only guarantees liveness during stable-enough periods (section 5.6 / FLP),
 so these checks are bounded: some command must commit within a step budget.
 """
 
-from raftverified.cluster import Cluster
+from deterministic_raft.cluster import Cluster
 
 BUDGET = 12_000  # steps; generous but bounded
 

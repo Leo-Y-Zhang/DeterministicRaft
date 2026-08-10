@@ -2,8 +2,8 @@
 
 import xml.etree.ElementTree as ET
 
-from raftverified.cluster import Cluster
-from raftverified.timeline import PALETTE, render_timeline, term_color
+from deterministic_raft.cluster import Cluster
+from deterministic_raft.timeline import PALETTE, render_timeline, term_color
 
 
 def chaos_result(seed=3, steps=4000):

@@ -1,7 +1,7 @@
 """Leader election tests: clean elections, split votes, partitions, crashes."""
 
-from raftverified.cluster import Cluster
-from raftverified.node import FOLLOWER, LEADER
+from deterministic_raft.cluster import Cluster
+from deterministic_raft.node import FOLLOWER, LEADER
 
 
 def has_leader(c):

@@ -3,7 +3,7 @@ requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "raftverified"
+name = "deterministic_raft"
 version = "1.2.0"
 description = "Educational Raft consensus implementation verified by deterministic simulation testing"
 readme = "README.md"
@@ -19,13 +19,13 @@ classifiers = [
 ]
 
 [project.scripts]
-raftverified = "raftverified.cli:main"
+deterministic-raft = "deterministic_raft.cli:main"
 
 [project.optional-dependencies]
 dev = ["pytest", "mypy", "ruff"]
 
 [tool.setuptools]
-packages = ["raftverified"]
+packages = ["deterministic_raft"]
 
 [tool.pytest.ini_options]
 addopts = "-m 'not slow'"

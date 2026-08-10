@@ -1,4 +1,4 @@
-# RaftVerified — what it has to do, and how you would check
+# DeterministicRaft — what it has to do, and how you would check
 
 v1.2.0. Reconstructed from the code and from the original build spec. Every
 requirement below names the check that proves it, so this document can be
@@ -32,7 +32,7 @@ checker reports safety on a run that was not safe, and the author learns Raft wr
 verifier that cannot be demonstrated to catch anything is worthless, and no amount of
 green output distinguishes the two cases.
 
-So the repository carries six deliberately injectable consensus bugs (`raftverified/bugs.py`),
+So the repository carries six deliberately injectable consensus bugs (`deterministic_raft/bugs.py`),
 and each must be caught by exactly the property it breaks — asserted in `tests/test_bugs.py`
 and `tests/test_nemesis.py`, not claimed in prose. One of them, `stale_local_reads`, must
 be **missed by every internal invariant** and caught only by the linearizability oracle.
@@ -43,21 +43,21 @@ rather than as another invariant over node state.
 
 Each of these is a command, from a clean clone.
 
-- [x] A run is reproducible from a seed alone: `raftverified replay --seed 42 --faults chaos`
+- [x] A run is reproducible from a seed alone: `deterministic_raft replay --seed 42 --faults chaos`
       runs the configuration twice and reports byte-identical event traces. It does —
       6042 trace events at seed 7, digest `fd5cd28b…`, from the CI step that ships.
 - [x] The paper's five safety properties are evaluated **after every simulator step**, not
-      at the end. `raftverified check --seeds 100 --faults chaos` reports
+      at the end. `deterministic_raft check --seeds 100 --faults chaos` reports
       `invariant_checks=500000` for 100 × 5000 steps: one check per step, zero violations.
 - [x] A violation names its own reproduction. `InvariantViolation` carries the seed, the
       step and a complete replay command, including `--membership` and the `--nemesis`
       schedule quoted back verbatim (`tests/test_invariants.py`, `tests/test_report.py`).
 - [x] A failing seed becomes a minimal counterexample automatically: ddmin over the fault
       injections to a 1-minimal set, then a binary search on the step budget
-      (`raftverified/shrink.py`, `tests/test_shrink.py`).
+      (`deterministic_raft/shrink.py`, `tests/test_shrink.py`).
 - [x] What *clients* saw is checked independently of what the logs did, by a
       linearizability oracle over the recorded client history
-      (`raftverified/linearizability.py`).
+      (`deterministic_raft/linearizability.py`).
 - [x] The whole gate is one CI job: ruff, mypy `--strict`, 469 pytest tests, a 100-seed
       chaos sweep and a replay-determinism check.
 
@@ -69,7 +69,7 @@ Each of these is a command, from a clean clone.
   No wall clock, no threads, no ambient randomness anywhere in the algorithm.
 - The Raft node module contains the algorithm and nothing else — no I/O, no clock, no RNG
   of its own. This is what makes it simulable; it is a design rule, not a style
-  preference (`raftverified/node.py`).
+  preference (`deterministic_raft/node.py`).
 - Safety invariants evaluated after *every* step, with the checker reading node state and
   never mutating it.
 - Golden digests and RNG-draw counts pinned in `tests/goldens.json`, so an accidental

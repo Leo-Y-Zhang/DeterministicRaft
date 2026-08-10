@@ -1,6 +1,6 @@
 """Unit tests for the RaftNode RPC handlers, driven directly with constructed messages."""
 
-from raftverified.node import (
+from deterministic_raft.node import (
     CANDIDATE,
     FOLLOWER,
     LEADER,
@@ -12,7 +12,7 @@ from raftverified.node import (
     RequestVote,
     VoteReply,
 )
-from raftverified.sim import Simulator
+from deterministic_raft.sim import Simulator
 
 
 def make_node(node_id=0, n=3, term=0, log=(), seed=1):

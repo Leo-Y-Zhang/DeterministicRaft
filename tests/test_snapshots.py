@@ -11,11 +11,11 @@ Two halves:
 import pytest
 from test_invariants import FakeNode
 
-from raftverified.cluster import Cluster
-from raftverified.invariants import InvariantChecker, InvariantViolation
-from raftverified.kv import Command, KVStateMachine
-from raftverified.linearizability import check
-from raftverified.node import LEADER, RaftConfig
+from deterministic_raft.cluster import Cluster
+from deterministic_raft.invariants import InvariantChecker, InvariantViolation
+from deterministic_raft.kv import Command, KVStateMachine
+from deterministic_raft.linearizability import check
+from deterministic_raft.node import LEADER, RaftConfig
 
 SNAP = RaftConfig(snapshot_threshold=10)
 

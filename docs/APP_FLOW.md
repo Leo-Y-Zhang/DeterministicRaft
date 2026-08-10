@@ -1,4 +1,4 @@
-# App Flow — the RaftVerified command line
+# App Flow — the DeterministicRaft command line
 
 No GUI, no interactive prompt. The user-facing surface is one console script with four
 subcommands, two file artefacts and three exit codes. It is documented exhaustively here
@@ -16,7 +16,7 @@ membership bug armed at six servers, chaos seed 354:
 ```
 [LeaderCompleteness] leader n4 (term 84) is missing committed entry
 Entry(term=83, command='cfg:0,1,2,3,5') at index 60 (seed=354 step=5784)
--- reproduce with: raftverified replay --nodes 6 --seed 354 --faults chaos --membership
+-- reproduce with: deterministic_raft replay --nodes 6 --seed 354 --faults chaos --membership
 ```
 
 The message carries the property that failed, the concrete entry that was lost, the seed
@@ -33,8 +33,8 @@ exactly. For a deliberately-armed bug like the one above, the printed command ru
 ## Getting in
 
 ```bash
-raftverified <command> [args]          # console script from the editable install
-python -m raftverified <command>       # identical; no install step needed
+deterministic_raft <command> [args]          # console script from the editable install
+python -m deterministic_raft <command>       # identical; no install step needed
 ```
 
 `run`, `check`, `replay`, `report`. All four accept `--nodes`, `--faults
@@ -47,8 +47,8 @@ invocation of the shipped binary can turn a defect on.
 **`check`** is the ten-second version — sweep many seeds, get one number.
 
 ```
-$ raftverified check --seeds 100 --faults chaos
-raftverified check: seeds 0..99 nodes=5 faults=chaos steps=5000
+$ deterministic_raft check --seeds 100 --faults chaos
+deterministic_raft check: seeds 0..99 nodes=5 faults=chaos steps=5000
 seeds=100 faults=chaos invariant_checks=500000 violations=0
 ```
 
@@ -59,7 +59,7 @@ final state of every node.
 twice and compares the two event traces byte for byte.
 
 ```
-$ raftverified replay --seed 7 --faults chaos --steps 4000
+$ deterministic_raft replay --seed 7 --faults chaos --steps 4000
 attempt 1 digest: sha256:fd5cd28b418e8db42cfed9fd13a865fea54d40c7489735c14056ec9294f7ae73
 attempt 2 digest: sha256:fd5cd28b418e8db42cfed9fd13a865fea54d40c7489735c14056ec9294f7ae73
 replay verified: 6042 trace events, byte-identical
@@ -75,21 +75,21 @@ carrying the exact command that reproduces the run.
 |---|---|---|---|---|
 | `run` | `--steps 0` prints a complete, honest zero report (`0 checks`, empty-string digest `e3b0c442…`) rather than nothing | full summary + final logs, exit **0**; with `--timeline`, `timeline written: <path>` | `INVARIANT VIOLATION: [name] detail (seed=… step=…) -- reproduce with: …`, exit **1** | exit **2** |
 | `check` | `--seeds 0` prints the totals line with zeroes | `seeds=N … violations=0`, exit **0** | one `seed N: VIOLATION …` line per failing seed, then `reproduce the first failure with:` and the command, exit **1** | exit **2** |
-| `replay` | — | both digests plus `replay verified: N trace events, byte-identical`, exit **0** | either attempt raising ⇒ `attempt K: INVARIANT VIOLATION: …`; or `replay FAILED: traces differ`, which means a determinism bug in RaftVerified itself, exit **1** | exit **2** |
+| `replay` | — | both digests plus `replay verified: N trace events, byte-identical`, exit **0** | either attempt raising ⇒ `attempt K: INVARIANT VIOLATION: …`; or `replay FAILED: traces differ`, which means a determinism bug in DeterministicRaft itself, exit **1** | exit **2** |
 | `report` | — | `report written: <path> (linearizable=True, N ops checked)`, exit **0** | violation before the page is written ⇒ nothing written, exit **1** | exit **2** |
 
 Usage errors are total and early. Two layers produce them, both exiting 2:
 
 ```
-$ raftverified run --nodes 3 --steps 10 --nemesis '[{"pattern":"nope","at":1}]'
-raftverified run: error: argument --nemesis: unknown pattern 'nope';
+$ deterministic_raft run --nodes 3 --steps 10 --nemesis '[{"pattern":"nope","at":1}]'
+deterministic_raft run: error: argument --nemesis: unknown pattern 'nope';
   expected one of ['crash_node', 'flapping_link', 'isolate_leader', 'lossy_link', 'partition_halves']
 
-$ raftverified run --nodes 3 --steps 10 --nemesis '[{"pattern":"crash_node","node":9,"at":100,"duration":50}]'
-raftverified: error: nemesis schedule names node n9; this cluster only has n0..n2
+$ deterministic_raft run --nodes 3 --steps 10 --nemesis '[{"pattern":"crash_node","node":9,"at":100,"duration":50}]'
+deterministic_raft: error: nemesis schedule names node n9; this cluster only has n0..n2
 
-$ raftverified run --nodes 2 --membership --steps 100
-raftverified: error: membership mode needs at least three nodes
+$ deterministic_raft run --nodes 2 --membership --steps 100
+deterministic_raft: error: membership mode needs at least three nodes
 ```
 
 The first is argparse: the schedule failed to parse or validate. The second and third are
@@ -128,7 +128,7 @@ still fires.
 
 ## Two dead ends, both honest
 
-**A single-node cluster never commits.** `raftverified run --nodes 1` elects `n0` leader
+**A single-node cluster never commits.** `deterministic_raft run --nodes 1` elects `n0` leader
 and accepts client commands, but `_advance_commit` is only ever called from
 `_on_append_reply` — with no peers, no reply ever arrives, so the commit index stays at 0
 forever. Verified: 5000 steps, `submitted=3 committed=0`, `len=3`. Safety invariants hold
