@@ -4,7 +4,7 @@
 
 - **Renamed: RaftVerified -> DeterministicRaft.** The package (`raftverified/` ->
   `deterministic_raft/`), the distribution name and the console script (now
-  `deterministic-raft`) move with it; `raftverified` no longer exists as either a
+  `deterministic_raft`) move with it; `raftverified` no longer exists as either a
   command or an import. The name now states the thing worth knowing - every
   failure replays exactly from its seed - instead of claiming a verification
   stronger than simulation testing delivers.

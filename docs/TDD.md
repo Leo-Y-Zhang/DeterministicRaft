@@ -171,7 +171,7 @@ the same way — demonstrated by substitution before the re-pin, not assumed.
 
 ## What the tests would catch
 
-469 tests across 24 files, plus one long sweep behind the `slow` marker.
+471 tests across 24 files, plus one long sweep behind the `slow` marker.
 
 **Positive — the legitimate thing still works.** 100-seed chaos sweeps stay clean; bounded
 liveness holds under `none` and `light`; legal compaction and legal reconfiguration do

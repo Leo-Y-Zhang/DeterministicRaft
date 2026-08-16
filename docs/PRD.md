@@ -58,7 +58,7 @@ Each of these is a command, from a clean clone.
 - [x] What *clients* saw is checked independently of what the logs did, by a
       linearizability oracle over the recorded client history
       (`deterministic_raft/linearizability.py`).
-- [x] The whole gate is one CI job: ruff, mypy `--strict`, 469 pytest tests, a 100-seed
+- [x] The whole gate is one CI job: ruff, mypy `--strict`, 471 pytest tests, a 100-seed
       chaos sweep and a replay-determinism check.
 
 ## Requirements

@@ -19,7 +19,7 @@ classifiers = [
 ]
 
 [project.scripts]
-deterministic-raft = "deterministic_raft.cli:main"
+deterministic_raft = "deterministic_raft.cli:main"
 
 [project.optional-dependencies]
 dev = ["pytest", "mypy", "ruff"]

@@ -261,7 +261,7 @@ python -m venv .venv
 .venv/Scripts/python.exe -m pip install -e ".[dev]"   # Windows
 # .venv/bin/python -m pip install -e ".[dev]"          # Linux/macOS
 
-python -m pytest -q              # 469 tests (a longer sweep is marked slow)
+python -m pytest -q              # 471 tests (a longer sweep is marked slow)
 python -m mypy deterministic_raft      # clean (strict)
 python -m ruff check .           # clean
 
@@ -305,7 +305,7 @@ deterministic_raft/
   timeline.py         SVG timeline renderer (no dependencies)
   report.py           self-contained HTML run report
   cli.py              run / check / replay / report
-tests/                469 tests: unit, scenario, invariant sweeps, oracle, shrinker,
+tests/                471 tests: unit, scenario, invariant sweeps, oracle, shrinker,
                       nemesis, crash-restart, snapshots, ReadIndex, membership,
                       determinism goldens
 ```
