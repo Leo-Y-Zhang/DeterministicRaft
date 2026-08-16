@@ -479,7 +479,7 @@ class Cluster:
             log_digest = hashlib.sha256(repr(n.log).encode()).hexdigest()[:12]
             final.append({
                 "id": i, "role": n.role, "term": n.term, "alive": n.alive,
-                "commit_index": n.commit_index, "applied": len(n.applied),
+                "commit_index": n.commit_index, "applied": n.last_applied,
                 "log_length": n.last_log_index(), "log_sha256": log_digest,
             })
         return RunResult(

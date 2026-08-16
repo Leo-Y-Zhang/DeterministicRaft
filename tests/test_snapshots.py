@@ -95,6 +95,18 @@ class TestCompaction:
                 rebuilt.apply(Command.decode(e.command))
             assert rebuilt.snapshot() == n.kv.snapshot()
 
+    def test_run_summary_reports_the_applied_index_not_the_live_list_length(self):
+        # The `applied` column of the run summary sits next to `commit` and `len`, which
+        # are both LOGICAL indices; compaction trims the live `applied` list, so reporting
+        # its length silently understates how far the state machine really got.
+        c = Cluster(num_nodes=5, seed=3, faults="none", config=RaftConfig(
+            snapshot_threshold=5))
+        result = c.run(4000)
+        assert any(n.base_index > 0 for n in c.nodes.values())  # the run really compacted
+        for row in result.final:
+            node = c.nodes[row["id"]]
+            assert row["applied"] == node.last_applied
+
 
 class TestInstallSnapshot:
     def test_lagging_follower_catches_up_via_install_snapshot(self):
