@@ -3,6 +3,8 @@
 import shlex
 import subprocess
 import sys
+import tomllib
+from pathlib import Path
 
 import pytest
 
@@ -140,6 +142,18 @@ class TestNemesisFlag:
         assert tokens[0] == "deterministic_raft"
         args = build_parser().parse_args(tokens[1:])
         assert args.nemesis == sched
+
+
+class TestConsoleScript:
+    def test_the_packaged_console_script_is_the_command_the_tool_prints(self):
+        """Every replay hint, every usage line and every transcript in the README and
+        docs names the parser's prog. If the packaged console script is called something
+        else, none of those printed commands runs after an install -- and a violation
+        that cannot be reproduced from what was printed is the one failure this whole
+        tool exists to prevent."""
+        pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+        scripts = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["scripts"]
+        assert build_parser().prog in scripts
 
 
 class TestCheck:
