@@ -29,6 +29,11 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
+          # The gate tools are pinned to the versions this tree was validated
+          # against, because an unpinned gate fails on a commit that changed
+          # nothing: ruff 0.6.9 reports 2 UP038 errors on the exact tree that
+          # 0.16.5 passes clean. Bump these together, or not at all.
+          pip install ruff==0.16.5 mypy==2.3.1 pytest==9.1.1
       - name: Lint (ruff)
         run: python -m ruff check .
       - name: Type check (mypy --strict)

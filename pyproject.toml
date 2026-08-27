@@ -22,6 +22,9 @@ classifiers = [
 deterministic_raft = "deterministic_raft.cli:main"
 
 [project.optional-dependencies]
+# Left unpinned on purpose so a contributor installing locally gets current
+# tools. The exact gate versions this tree was validated against are pinned at
+# the CI install site instead, in .github/workflows/ci.yml.
 dev = ["pytest", "mypy", "ruff"]
 
 [tool.setuptools]
