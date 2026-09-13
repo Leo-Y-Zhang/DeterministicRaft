@@ -104,6 +104,49 @@ class TestLeaderAppendOnly:
         check([a], checker, step=2)
 
 
+class TestLeaderAppendOnlyLoopScan:
+    """`_check_leader_append_only` iterates ALL node ids every step, popping stale
+    snapshot-cache entries for non-leaders as it goes; a leader elsewhere in the id
+    order must still be checked even after a non-leader earlier in the loop was
+    processed. Likewise, once a leader's per-round log-change check finds nothing
+    wrong, the cached snapshot MUST be refreshed to the new state so the NEXT
+    round's comparison has a correct baseline instead of silently re-basing.
+    """
+
+    def test_scanning_past_a_non_leader_still_reaches_a_later_leader(self):
+        # If the `continue` after popping a non-leader's stale snapshot entry were
+        # a `break`, the whole per-step scan would abort as soon as the FIRST
+        # non-leader id is seen, and any leader with a HIGHER id would never be
+        # checked at all -- for however long it holds that id.
+        checker = InvariantChecker(seed=20)
+        follower = FakeNode(0, role=FOLLOWER, term=1)  # empty log: no overlap with the leader's
+        leader = FakeNode(1, role=LEADER, term=2, log=[(1, "a"), (2, "b")])
+        check([follower, leader], checker)  # id0 processed first; establishes id1's baseline
+        leader.set_log([(1, "a")])  # leader illegally deletes its own committed entry
+        with pytest.raises(InvariantViolation, match="LeaderAppendOnly") as exc:
+            check([follower, leader], checker, step=2)
+        assert exc.value.step == 2
+        assert "n1" in exc.value.detail
+
+    def test_snapshot_is_refreshed_after_a_clean_round_not_wiped(self):
+        # After a round where the leader's log changed but legally (e.g. a plain
+        # append), `self._leader_snapshot[i]` must be updated to the new state so
+        # the FOLLOWING round compares against it. If it were reset to None
+        # instead, the next round would read as "no prior snapshot" and silently
+        # re-baseline (skipping that round's comparison) rather than catching a
+        # real mutation.
+        checker = InvariantChecker(seed=21)
+        a = FakeNode(0, role=LEADER, term=1, log=[(1, "a")])
+        check([a], checker)  # step1: fresh baseline
+        a.set_log([(1, "a"), (1, "b")])  # step2: legal append
+        check([a], checker, step=2)  # must refresh the cached snapshot to include "b"
+        a.set_log([(1, "a")])  # step3: illegal truncation of the now-committed "b"
+        with pytest.raises(InvariantViolation, match="LeaderAppendOnly") as exc:
+            check([a], checker, step=3)
+        assert exc.value.step == 3
+        assert "n0" in exc.value.detail
+
+
 class TestLogMatching:
     def test_same_term_same_index_different_prefix_detected(self):
         a = FakeNode(0, log=[(1, "a"), (2, "c")])
@@ -138,6 +181,59 @@ class TestLogMatching:
         a.log_version += 1
         with pytest.raises(InvariantViolation, match="LogMatching"):
             check([a, b], checker, step=3)
+
+
+class TestLogMatchingLoopScan:
+    """`_check_log_matching` memoizes each (ai, bi) pair's last-seen log_version
+    pair so unchanged pairs are skipped; the memo key must be unique PER PAIR, and
+    an unchanged pair earlier in the loop must not abort scanning the rest. The
+    descending search for the highest index where two logs agree on term must
+    also visit every candidate index, not skip every other one.
+    """
+
+    def test_pair_cache_key_must_be_unique_per_pair(self):
+        # If every pair shared one memo slot, the FIRST pair ever checked (here,
+        # (n0, n1), both starting at log_version 0) would cache under that one
+        # shared key, and every OTHER pair with the same (log_version, log_version)
+        # tuple -- which is every pair on a cluster's first check, since all nodes
+        # start at log_version 0 -- would read back as "already verified" and
+        # never actually get compared.
+        a = FakeNode(0, log=[(1, "a")])
+        b = FakeNode(1, log=[(1, "a")])
+        c = FakeNode(2, log=[(1, "z")])  # diverges from a at a term they share
+        with pytest.raises(InvariantViolation, match="LogMatching") as exc:
+            check([a, b, c])
+        assert "n0" in exc.value.detail and "n2" in exc.value.detail
+
+    def test_unchanged_pair_does_not_abort_scanning_remaining_pairs(self):
+        # Pair (n0, n1) never changes, so it is a permanent cache hit from the
+        # second check onward. That must only skip THAT pair, not abort checking
+        # (n0, n2) as well -- (n1, n2) alone can't cover the gap, since n1 and n2
+        # disagree on term at the diverging index and so never compare content.
+        checker = InvariantChecker(seed=22)
+        a = FakeNode(0, log=[(1, "a")])
+        b = FakeNode(1, log=[(2, "a")])  # different term from a: pair(0,1) never compares content
+        c = FakeNode(2, log=[(1, "a")])  # shares a's term; matches for now
+        check([a, b, c], checker)  # step1: seeds the cache for all three pairs; nothing to report
+
+        c.set_log([(1, "z")])  # step2: c diverges from a in content at the term they share
+        with pytest.raises(InvariantViolation, match="LogMatching") as exc:
+            check([a, b, c], checker, step=2)
+        assert exc.value.step == 2
+        assert "n0" in exc.value.detail and "n2" in exc.value.detail
+
+    def test_descending_search_stride_must_not_skip_the_true_agreement_index(self):
+        # The search for the highest index where both logs agree on term walks
+        # DOWN from hi one index at a time. If it skipped every other index, it
+        # could miss the true (odd-offset) agreement point and settle for a lower
+        # one, narrowing the following entry-by-entry comparison and hiding a
+        # genuine divergence that sits between the true and the found index.
+        a = FakeNode(0, log=[(1, "p"), (2, "q"), (3, "m"), (9, "x")])
+        b = FakeNode(1, log=[(1, "p"), (5, "Q"), (3, "m"), (8, "y")])
+        with pytest.raises(InvariantViolation, match="LogMatching") as exc:
+            check([a, b])
+        assert "index 3" in exc.value.detail
+        assert "index 2" in exc.value.detail
 
 
 class TestLeaderCompleteness:
@@ -260,6 +356,40 @@ class TestCommitMonotonicity:
         a.commit_index = 1
         with pytest.raises(InvariantViolation, match="CommitIndexMonotonic"):
             check([a], checker, step=2)
+
+
+class TestCommitQuorum:
+    """A newly committed entry must be held by a TRUE MAJORITY (strictly more
+    than half) of the committing node's CURRENT voting set -- not merely "over a
+    third" and not merely "at least half". There is otherwise no dedicated
+    coverage of this invariant anywhere in this file.
+    """
+
+    def test_far_short_of_a_majority_is_flagged(self):
+        # 2 of 5 voters holding a newly-committed entry is nowhere near a
+        # majority (3+ needed). ids 2, 3 and 4 are simply absent from the `nodes`
+        # view passed to check() -- an absent voter can't be counted as holding
+        # the entry, same as a voter that is present but lagging.
+        leader = FakeNode(
+            0, role=LEADER, term=1, log=[(1, "a")], commit_index=1, voters=(0, 1, 2, 3, 4)
+        )
+        follower = FakeNode(1, term=1, log=[(1, "a")])
+        with pytest.raises(InvariantViolation, match="CommitQuorum") as exc:
+            check([leader, follower])
+        assert "n0" in exc.value.detail
+        assert "only 2 of its 5-server configuration" in exc.value.detail
+
+    def test_exact_half_of_an_even_configuration_is_not_a_majority(self):
+        # 2 of 4 voters is exactly half, which is NOT a majority -- the boundary
+        # case an off-by-one in the quorum comparison would miss.
+        leader = FakeNode(
+            0, role=LEADER, term=1, log=[(1, "a")], commit_index=1, voters=(0, 1, 2, 3)
+        )
+        follower = FakeNode(1, term=1, log=[(1, "a")])
+        with pytest.raises(InvariantViolation, match="CommitQuorum") as exc:
+            check([leader, follower])
+        assert "n0" in exc.value.detail
+        assert "only 2 of its 4-server configuration" in exc.value.detail
 
 
 class TestViolationErgonomics:
