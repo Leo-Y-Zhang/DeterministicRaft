@@ -166,6 +166,69 @@ class TestLeaderCompleteness:
         check([a, b], checker, step=2)
 
 
+class TestLeaderCompletenessDedupCache:
+    """`_check_leader_completeness` skips re-verifying a leader whose
+    (term, log_version, len(committed)) triple hasn't changed since it was last
+    checked. That cache must not create false negatives: it must be invalidated
+    the moment a node stops being leader, and its ascending-index commit-term
+    filter must skip only the entries it is meant to, not abort early.
+    """
+
+    def test_stale_cache_entry_surviving_a_leadership_loss_hides_a_regression(self):
+        # `_completeness_checked.pop(i, None)` must clear NODE i's own entry when
+        # it stops being leader. If it used the wrong key, a stale
+        # (term, log_version, len(committed)) triple for n0 would survive a
+        # leadership loss, and skip re-verification if n0 later regains
+        # leadership and lands back on that exact same triple.
+        checker = InvariantChecker(seed=7)
+        a = FakeNode(0, role=LEADER, term=1, log=[(1, "a")], commit_index=1)
+        check([a], checker, step=1)  # commits index 1; caches state (1, 0, 1) for n0
+
+        a.role = FOLLOWER
+        check([a], checker, step=2)  # n0 lost leadership -> its cache entry must be dropped
+
+        # Regain leadership with an IDENTICAL (term, log_version, len(committed))
+        # triple, but corrupt the already-committed entry in place, WITHOUT
+        # bumping log_version, so leader completeness is now genuinely violated.
+        # A correctly-invalidated cache re-verifies n0 from scratch and catches
+        # this; a stale surviving entry would read as a cache hit and skip it.
+        a.role = LEADER
+        a.log[0] = Entry(1, "TAMPERED")
+        assert a.log_version == 0  # unchanged: must still land on the cached triple
+
+        with pytest.raises(InvariantViolation, match="LeaderCompleteness") as exc:
+            check([a], checker, step=3)
+        assert exc.value.step == 3
+        assert "n0" in exc.value.detail
+        assert "index 1" in exc.value.detail
+
+    def test_non_monotonic_commit_terms_do_not_short_circuit_later_indices(self):
+        # `self.committed` is walked in ascending index order and the leader's
+        # term is compared against each entry's commit_term; entries committed
+        # by a later term than the leader's must be SKIPPED (continue), not
+        # abort checking of every higher index that follows. Build committed
+        # entries whose commit_term is non-monotonic in index: index 1 was first
+        # observed by a term-5 node (skip-worthy for a term-1 leader), index 2 by
+        # a term-1 node (still binding on a term-1 leader).
+        checker = InvariantChecker(seed=8)
+        # n0 (id smallest, processed first) newly observes index 1 at term 5.
+        observer_hi = FakeNode(0, role=FOLLOWER, term=5, log=[(5, "x")], commit_index=1)
+        # n1 newly observes index 2 at term 1 (index 1 already known, unchanged).
+        observer_lo = FakeNode(1, role=FOLLOWER, term=1, log=[(5, "x"), (1, "y")], commit_index=2)
+        check([observer_hi, observer_lo], checker, step=1)
+
+        # A term-1 leader with an empty log is missing BOTH committed entries,
+        # but index 1's commit_term (5) exempts a term-1 leader from it -- only
+        # index 2 (commit_term 1) must be flagged.
+        leader = FakeNode(2, role=LEADER, term=1, log=[])
+        with pytest.raises(InvariantViolation, match="LeaderCompleteness") as exc:
+            check([leader], checker, step=2)
+        assert exc.value.step == 2
+        assert "n2" in exc.value.detail
+        assert "index 2" in exc.value.detail
+        assert "index 1" not in exc.value.detail
+
+
 class TestStateMachineSafety:
     def test_different_applied_command_at_same_index_detected(self):
         a = FakeNode(0, applied=["x"])
