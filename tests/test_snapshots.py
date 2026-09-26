@@ -246,3 +246,25 @@ class TestStaleTrafficAcrossTheSnapshotBoundary:
         c.run(steps)  # invariants asserted every step
         assert check(c.history).linearizable
 
+
+class TestCheckerSeesCommitsBeforeCompaction:
+    def test_every_commit_is_observed_even_when_it_triggers_compaction(self):
+        # threshold 1: every commit compacts in the same step. The post-step check alone
+        # saw commit_index == base_index and never recorded (or quorum-checked) anything.
+        c = Cluster(num_nodes=3, seed=3, faults="none", config=RaftConfig(snapshot_threshold=1))
+        c.run(3000)
+        top = max(n.commit_index for n in c.nodes.values())
+        assert top > 5
+        assert set(c.checker.committed) == set(range(1, top + 1))
+        assert set(c.checker.applied_at) == set(range(1, top + 1))
+
+    def test_a_quorumless_commit_that_compacts_is_still_caught(self):
+        c = Cluster(num_nodes=3, seed=3, faults="none", client_interval=None,
+                    config=RaftConfig(snapshot_threshold=1))
+        assert c.run_until(lambda c: c.leader() is not None)
+        leader = c.leader()
+        assert leader is not None
+        leader.client_command("x")  # appended locally; replication still in flight
+        with pytest.raises(InvariantViolation, match="CommitQuorum"):
+            leader._set_commit_index(leader.last_log_index())  # commit it without a quorum
+            c.checker.check(c.nodes, c.sim.steps)
