@@ -588,12 +588,25 @@ class RaftNode:
         self.leader_id = msg.leader
         self._arm_election_timer()
 
+        # A delayed AppendEntries can reach below our snapshot. Everything at or below
+        # base_index is committed, and this term's leader holds every committed entry
+        # (Leader Completeness), so the covered entries match by construction: skip them
+        # and resume at the boundary. Comparing them instead would read base_term for
+        # every compacted index and truncate the live log at a negative offset.
+        prev_index, prev_term, entries = msg.prev_index, msg.prev_term, msg.entries
+        if prev_index < self.base_index:
+            covered = min(len(entries), self.base_index - prev_index)
+            if covered:
+                prev_index += covered
+                prev_term = entries[covered - 1].term
+                entries = entries[covered:]
+
         # Consistency check: our log must contain an entry at prev_index whose
         # term matches prev_term (Log Matching, section 5.3). The BUG ignores the
         # term mismatch (but still guards the index bound to avoid a gap/crash).
-        too_short = self.last_log_index() < msg.prev_index
-        term_mismatch = not too_short and self.term_at(msg.prev_index) != msg.prev_term
-        if msg.prev_index > 0 and (
+        too_short = self.last_log_index() < prev_index
+        term_mismatch = not too_short and self.term_at(prev_index) != prev_term
+        if prev_index >= max(1, self.base_index) and (
             too_short or (term_mismatch and not self.bugs.skip_log_consistency)
         ):
             self._send(self.id, msg.leader, AppendReply(self.term, self.id, False, 0))
@@ -602,8 +615,8 @@ class RaftNode:
         # Append new entries, deleting any conflicting suffix. Entries that already
         # match are kept untouched, which makes duplicated/reordered AppendEntries
         # idempotent and never truncates committed entries.
-        index = msg.prev_index
-        for entry in msg.entries:
+        index = prev_index
+        for entry in entries:
             index += 1
             if self.last_log_index() >= index:
                 if self.term_at(index) != entry.term:
@@ -618,7 +631,7 @@ class RaftNode:
             decoded = decode_config(entry.command)
             if decoded is not None:
                 self._adopt_config(decoded, index)  # effective on append (ch. 4)
-        match = msg.prev_index + len(msg.entries)
+        match = prev_index + len(entries)
 
         # Advance commit index; the max() guards against a stale, reordered
         # AppendEntries lowering it. The BUG drops that guard, so a reordered message
@@ -657,10 +670,15 @@ class RaftNode:
             self._become_follower(msg.term)
         self.leader_id = msg.leader
         self._arm_election_timer()
-        if msg.last_index <= self.base_index:
-            # we already cover this snapshot; just acknowledge our progress
+        if msg.last_index <= self.commit_index:
+            # We already hold everything the snapshot covers, committed (a delayed or
+            # duplicated InstallSnapshot). Installing it would move commit_index and the
+            # state machine BACKWARDS (Figure 13, step 6: keep the log and reply). Report
+            # only the committed prefix as matched: the tail above it may be an older
+            # term's uncommitted entries, and counting those as replicated would let the
+            # leader commit an entry this follower does not hold.
             self._send(self.id, msg.leader,
-                       AppendReply(self.term, self.id, True, self.last_log_index()))
+                       AppendReply(self.term, self.id, True, self.commit_index))
             return
         # Install the image, keeping a consistent log tail beyond last_index if we have one
         # (otherwise discard the whole log). Uses the OLD base_index for the truncation.
