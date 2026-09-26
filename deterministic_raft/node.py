@@ -155,6 +155,7 @@ class RaftNode:
         on_apply: Callable[[str, str], None] | None = None,
         bugs: Bugs = NO_BUGS,
         initial_voters: tuple[int, ...] | None = None,
+        before_compact: Callable[[], None] | None = None,
     ) -> None:
         self.id = node_id
         self.peers = sorted(peer_ids)
@@ -163,6 +164,9 @@ class RaftNode:
         self._record = record
         self._on_apply = on_apply     # (command_str, result) reported as each entry applies
         self.bugs = bugs              # deliberately-injected defects (default: none)
+        # called just before a compaction discards log entries and their applied labels,
+        # so an observer (the invariant checker) sees every commit before it is folded away
+        self._before_compact = before_compact
         self.config = config
 
         # Persistent state (Figure 2), rebuilt from stable storage after a crash.
@@ -762,6 +766,8 @@ class RaftNode:
         threshold = self.config.snapshot_threshold
         if threshold <= 0 or self.last_applied - self.base_index < threshold:
             return
+        if self._before_compact is not None:
+            self._before_compact()
         upto = self.last_applied
         last_term = self.term_at(upto)
         store, sessions = self.kv.capture()
