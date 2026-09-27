@@ -232,7 +232,10 @@ a config flag and each with its own determinism-pinned golden matrix:
   falls behind the compaction point is re-seeded with the whole state-machine image.
   The invariant checker was generalized *in lockstep* to reason over
   (compacted prefix + live tail) — with planted-bug tests proving it still catches a
-  real cross-boundary divergence and never false-positives on legal compaction.
+  real cross-boundary divergence and never false-positives on legal compaction. It
+  also runs just before each compaction, because a commit and the compaction it
+  triggers happen in the same step: checked only afterwards, those entries would be
+  folded away before any invariant saw them.
 - **ReadIndex linearizable reads (§8).** A `get` is served from local state without a
   log entry, but only after the leader confirms it still leads (a majority of
   heartbeat acks in its term) *and* has committed an entry in its own term. The
@@ -261,7 +264,7 @@ python -m venv .venv
 .venv/Scripts/python.exe -m pip install -e ".[dev]"   # Windows
 # .venv/bin/python -m pip install -e ".[dev]"          # Linux/macOS
 
-python -m pytest -q              # 471 tests (a longer sweep is marked slow)
+python -m pytest -q              # 489 tests (a longer sweep is marked slow)
 python -m mypy deterministic_raft      # clean (strict)
 python -m ruff check .           # clean
 

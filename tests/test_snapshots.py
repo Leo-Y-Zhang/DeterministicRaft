@@ -10,12 +10,20 @@ Two halves:
 
 import pytest
 from test_invariants import FakeNode
+from test_node import make_node, replies_of
 
 from deterministic_raft.cluster import Cluster
 from deterministic_raft.invariants import InvariantChecker, InvariantViolation
-from deterministic_raft.kv import Command, KVStateMachine
+from deterministic_raft.kv import Command, KVStateMachine, Snapshot
 from deterministic_raft.linearizability import check
-from deterministic_raft.node import LEADER, RaftConfig
+from deterministic_raft.node import (
+    LEADER,
+    AppendEntries,
+    AppendReply,
+    Entry,
+    InstallSnapshot,
+    RaftConfig,
+)
 
 SNAP = RaftConfig(snapshot_threshold=10)
 
@@ -163,3 +171,100 @@ class TestSnapshotSafetyAndDeterminism:
             c.run(4000)
             total += sum(1 for _, k, _ in c.events if k == "snapshot")
         assert total > 0
+
+
+def compacted_follower(term, base_index, base_term, tail, commit_index):
+    """A follower whose prefix through ``base_index`` is folded into a snapshot, holding
+    ``tail`` (term, command) pairs above it and having committed through ``commit_index``."""
+    node, sent, _ = make_node(term=term, log=tail)
+    node.base_index, node.base_term = base_index, base_term
+    node.snapshot = Snapshot(base_index, base_term, {}, {}, (0, 1, 2))
+    node.commit_index = node.last_applied = commit_index
+    node.applied = [c for _, c in tail][: commit_index - base_index]
+    return node, sent
+
+
+class TestStaleTrafficAcrossTheSnapshotBoundary:
+    """Delayed and duplicated RPCs that reach a follower after it compacted. Each of these
+    was a real defect: the seeds below reproduced it in the chaos simulator before the fix."""
+
+    def test_stale_append_below_the_base_never_truncates_committed_entries(self):
+        # committed 6,7 live above a snapshot through 5 (term 2). A delayed AppendEntries
+        # from this term's leader, sent before the compaction, starts at prev_index 0 with
+        # a term-1 entry: comparing it against the compacted prefix read base_term (2) for
+        # index 1, saw a "conflict" and deleted the live log at a negative offset.
+        node, sent = compacted_follower(2, 5, 2, [(2, "f"), (2, "g")], commit_index=7)
+        node.handle(1, AppendEntries(term=2, leader=1, prev_index=0, prev_term=0,
+                                     entries=(Entry(1, "a"),), leader_commit=0))
+        assert [(e.term, e.command) for e in node.log] == [(2, "f"), (2, "g")]
+        assert node.last_log_index() == 7
+        (reply,) = replies_of(sent, AppendReply)
+        assert reply.success is True and reply.match_index <= node.commit_index
+
+    def test_append_straddling_the_base_appends_only_the_new_suffix(self):
+        node, sent = compacted_follower(2, 5, 2, [(2, "f")], commit_index=6)
+        entries = tuple(Entry(2, c) for c in "defgh")  # logical indices 4..8
+        node.handle(1, AppendEntries(term=2, leader=1, prev_index=3, prev_term=2,
+                                     entries=entries, leader_commit=8))
+        assert [e.command for e in node.log] == ["f", "g", "h"]
+        assert node.commit_index == 8
+        (reply,) = replies_of(sent, AppendReply)
+        assert reply.success is True and reply.match_index == 8
+
+    def test_covered_snapshot_reply_reports_only_the_committed_prefix(self):
+        # base 5, then two UNCOMMITTED term-2 entries left over from an old leader. A
+        # stale InstallSnapshot(4) from the term-3 leader used to be answered with
+        # match_index = last_log_index (7): the leader then counted this follower as
+        # holding indices 6-7 of ITS log, which it does not.
+        node, sent = compacted_follower(3, 5, 1, [(2, "x"), (2, "y")], commit_index=5)
+        node.handle(1, InstallSnapshot(term=3, leader=1, last_index=4, last_term=1,
+                                       store={}, sessions={}, voters=(0, 1, 2)))
+        (reply,) = replies_of(sent, AppendReply)
+        assert reply.success is True and reply.match_index == 5
+
+    def test_snapshot_below_the_commit_index_does_not_rewind_the_follower(self):
+        # committed and applied through 10 with nothing compacted; a duplicated
+        # InstallSnapshot(8) used to reset commit_index/last_applied to 8 and the state
+        # machine to the older image (CommitIndexMonotonic in the simulator)
+        node, sent, _ = make_node(term=1, log=[(1, f"c{i}") for i in range(10)])
+        node.handle(1, AppendEntries(term=1, leader=1, prev_index=10, prev_term=1,
+                                     entries=(), leader_commit=10))
+        node.handle(1, InstallSnapshot(term=1, leader=1, last_index=8, last_term=1,
+                                       store={}, sessions={}, voters=(0, 1, 2)))
+        assert node.commit_index == node.last_applied == 10
+        assert node.base_index == 0 and len(node.applied) == 10
+        assert replies_of(sent, AppendReply)[-1].match_index == 10
+
+    # (threshold, nodes, seed, steps): chaos runs that failed before the fix -- the first
+    # two with CommitIndexMonotonic, the last crashing the leader with an IndexError after
+    # a follower reported a match_index beyond the leader's own log
+    @pytest.mark.parametrize("threshold,nodes,seed,steps",
+                             [(3, 5, 2, 5500), (5, 3, 78, 2500), (2, 3, 1, 1500)])
+    def test_small_threshold_chaos_seeds_that_used_to_fail(self, threshold, nodes, seed, steps):
+        c = Cluster(num_nodes=nodes, seed=seed, faults="chaos",
+                    config=RaftConfig(snapshot_threshold=threshold))
+        c.run(steps)  # invariants asserted every step
+        assert check(c.history).linearizable
+
+
+class TestCheckerSeesCommitsBeforeCompaction:
+    def test_every_commit_is_observed_even_when_it_triggers_compaction(self):
+        # threshold 1: every commit compacts in the same step. The post-step check alone
+        # saw commit_index == base_index and never recorded (or quorum-checked) anything.
+        c = Cluster(num_nodes=3, seed=3, faults="none", config=RaftConfig(snapshot_threshold=1))
+        c.run(3000)
+        top = max(n.commit_index for n in c.nodes.values())
+        assert top > 5
+        assert set(c.checker.committed) == set(range(1, top + 1))
+        assert set(c.checker.applied_at) == set(range(1, top + 1))
+
+    def test_a_quorumless_commit_that_compacts_is_still_caught(self):
+        c = Cluster(num_nodes=3, seed=3, faults="none", client_interval=None,
+                    config=RaftConfig(snapshot_threshold=1))
+        assert c.run_until(lambda c: c.leader() is not None)
+        leader = c.leader()
+        assert leader is not None
+        leader.client_command("x")  # appended locally; replication still in flight
+        with pytest.raises(InvariantViolation, match="CommitQuorum"):
+            leader._set_commit_index(leader.last_log_index())  # commit it without a quorum
+            c.checker.check(c.nodes, c.sim.steps)

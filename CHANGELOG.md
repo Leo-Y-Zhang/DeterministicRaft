@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+- **Fixed: RPCs that reach a follower after it compacted.** A delayed AppendEntries
+  starting below the snapshot boundary could truncate committed entries; a stale
+  InstallSnapshot was acknowledged with a match index covering uncommitted entries
+  the leader did not hold; and an InstallSnapshot below the follower's commit index
+  moved its commit index and state machine backwards. All three need small
+  snapshot thresholds to show up (2-5; the tests use 10), and chaos seeds that hit
+  them are now regression tests. Default and snapshot golden digests are unchanged.
+- **Fixed: the invariant checker missed commits that triggered a compaction.** It ran
+  only after each step, so entries committed and compacted in the same step skipped
+  Commit Quorum and State Machine Safety and were never recorded for Leader
+  Completeness. The checker now also runs just before every compaction; that extra
+  check draws no randomness, records nothing, and is not counted in
+  `invariant_checks`.
+
 - **Renamed: RaftVerified -> DeterministicRaft.** The package (`raftverified/` ->
   `deterministic_raft/`), the distribution name and the console script (now
   `deterministic_raft`) move with it; `raftverified` no longer exists as either a

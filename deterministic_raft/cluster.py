@@ -135,7 +135,7 @@ class Cluster:
         self.nodes: dict[int, RaftNode] = {
             i: RaftNode(i, [p for p in ids if p != i], self.sim, self.net.send,
                         self.record, config, on_apply=self._on_apply, bugs=bugs,
-                        initial_voters=initial_voters)
+                        initial_voters=initial_voters, before_compact=self._check_mid_step)
             for i in ids
         }
         self._nemesis = nemesis
@@ -436,6 +436,15 @@ class Cluster:
             return False
         self.checker.check(self.nodes, self.sim.steps)
         return True
+
+    def _check_mid_step(self) -> None:
+        """Check the cluster just before a node compacts. Committing and compacting happen
+        in the same step, so the post-step check alone would never see the entries that
+        step committed: they would skip Commit Quorum, State Machine Safety and the
+        committed-entry record that Leader Completeness compares against. Draws no
+        randomness and records nothing, so digests are unchanged; it is not counted as
+        one of the per-step checks."""
+        self.checker.check(self.nodes, self.sim.steps, count=False)
 
     def run(self, steps: int) -> RunResult:
         for _ in range(steps):
