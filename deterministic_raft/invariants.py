@@ -86,9 +86,11 @@ class InvariantChecker:
     def _fail(self, invariant: str, detail: str, step: int) -> None:
         raise InvariantViolation(invariant, detail, self.seed, step, self.replay_hint)
 
-    def check(self, nodes: Mapping[int, NodeView], step: int) -> None:
-        """Run all invariants against the current cluster state."""
-        self.checks_run += 1
+    def check(self, nodes: Mapping[int, NodeView], step: int, count: bool = True) -> None:
+        """Run all invariants against the current cluster state. ``count=False`` marks an
+        extra check inside a step (before a compaction), not one of the per-step checks."""
+        if count:
+            self.checks_run += 1
         ids = sorted(nodes)
         self._handle_restarts(nodes, ids)
         self._check_election_safety(nodes, ids, step)
