@@ -308,7 +308,7 @@ deterministic_raft/
   timeline.py         SVG timeline renderer (no dependencies)
   report.py           self-contained HTML run report
   cli.py              run / check / replay / report
-tests/                471 tests: unit, scenario, invariant sweeps, oracle, shrinker,
+tests/                490 tests: unit, scenario, invariant sweeps, oracle, shrinker,
                       nemesis, crash-restart, snapshots, ReadIndex, membership,
                       determinism goldens
 ```
