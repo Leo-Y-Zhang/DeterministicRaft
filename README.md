@@ -2,7 +2,7 @@
 
 [![CI](https://github.com/Leo-Y-Zhang/DeterministicRaft/actions/workflows/ci.yml/badge.svg)](https://github.com/Leo-Y-Zhang/DeterministicRaft/actions/workflows/ci.yml)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/downloads/)
-Proprietary - All Rights Reserved (c) 2026 Leo-Y-Zhang - portfolio viewing only.
+Proprietary, source-available: read it, run it, check it. See [LICENSE](LICENSE).
 
 A paper-faithful implementation of the Raft consensus algorithm (Ongaro &
 Ousterhout, *In Search of an Understandable Consensus Algorithm*, USENIX ATC
@@ -365,4 +365,6 @@ Written after the fact, from the code rather than from this README:
 
 ## License
 
-Proprietary - All Rights Reserved (c) 2026 Leo-Y-Zhang - portfolio viewing only.
+Proprietary, source-available. Copyright (c) 2026 Leo Y. Zhang. All rights
+reserved. You may read the source and run it to evaluate or check it; no reuse
+rights are granted. See [LICENSE](LICENSE) for the full terms.
